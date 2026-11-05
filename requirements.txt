@@ -1,0 +1,5 @@
+faster-whisper==1.1.1
+opencv-python-headless==4.10.0.84
+numpy<2.3
+pillow
+certifi

@@ -1,0 +1,43 @@
+{
+  "name": "gregio-autoedit",
+  "productName": "Gregio AutoEdit",
+  "version": "2.0.0",
+  "description": "Edição automática de vídeos para Reels",
+  "author": "Eduardo Gregio",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "com.gregio.autoedit",
+    "productName": "Gregio AutoEdit",
+    "directories": { "output": "../release" },
+    "files": ["main.js", "carregando.html", "icon.png"],
+    "extraResources": [{ "from": "../dist/backend", "to": "backend" }],
+    "artifactName": "Gregio-AutoEdit-${os}-${arch}.${ext}",
+    "mac": {
+      "target": [{ "target": "dmg" }],
+      "icon": "icon.icns",
+      "category": "public.app-category.video",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "dmg": { "title": "Gregio AutoEdit" },
+    "win": { "target": [{ "target": "nsis", "arch": ["x64"] }], "icon": "icon.ico" },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Gregio AutoEdit",
+      "artifactName": "Gregio-AutoEdit-Windows-Instalador.${ext}"
+    }
+  }
+}

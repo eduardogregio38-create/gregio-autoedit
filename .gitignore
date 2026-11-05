@@ -1,0 +1,8 @@
+bin/
+modelos/
+dist/
+work/
+__pycache__/
+*.pyc
+teste/
+resultado/

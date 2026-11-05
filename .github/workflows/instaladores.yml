@@ -1,0 +1,130 @@
+name: Instaladores
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  construir:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-13        # Mac com Intel
+            nome: Mac-Intel
+            eb: --mac --x64
+          - os: macos-14        # Mac com Apple Silicon (M1, M2, M3, M4)
+            nome: Mac-AppleSilicon
+            eb: --mac --arm64
+          - os: windows-latest
+            nome: Windows
+            eb: --win --x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    env:
+      PYTHONUTF8: "1"
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Bibliotecas do motor
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller==6.11.1 huggingface_hub
+      - name: FFmpeg, modelo de voz e redução de ruído
+        run: python build/preparar.py
+      - name: Empacotar o motor de edição
+        run: pyinstaller --noconfirm --clean --distpath dist --workpath work build/gregio.spec
+
+      - name: Criar takes de teste (Mac)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p teste
+          say -v Luciana -o teste/fala.aiff "Oi pessoal, hoje eu vou mostrar como funciona a nossa gravação. Vem comigo que tem muita coisa legal para ver. Primeiro a gente prepara a câmera, depois a luz e o som. No final eu conto o resultado. Até a próxima!" || say -o teste/fala.aiff "Hello everyone, today I will show you how our recording works. See you next time."
+          F=bin/ffmpeg
+          $F -v error -y -f lavfi -i "testsrc2=s=1080x1920:r=30" -i teste/fala.aiff -shortest -c:v libx264 -preset ultrafast -c:a aac teste/take_fala1.mp4
+          $F -v error -y -f lavfi -i "testsrc2=s=1080x1920:r=30" -i teste/fala.aiff -shortest -c:v libx264 -preset ultrafast -c:a aac teste/take_fala2.mp4
+          for i in 1 2 3 4; do $F -v error -y -f lavfi -i "mandelbrot=s=1920x1080:r=30" -f lavfi -i "anoisesrc=a=0.02" -t 8 -c:v libx264 -preset ultrafast -c:a aac teste/local$i.mp4; done
+          $F -v error -y -f lavfi -i "sine=f=220:d=90" -af volume=0.2 teste/trilha.mp3
+          rm teste/fala.aiff
+      - name: Criar takes de teste (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force teste | Out-Null
+          Add-Type -AssemblyName System.Speech
+          $s = New-Object System.Speech.Synthesis.SpeechSynthesizer
+          $s.SetOutputToWaveFile("$PWD\fala.wav")
+          $s.Speak("Oi pessoal, hoje eu vou mostrar como funciona a nossa gravação. Vem comigo que tem muita coisa legal para ver. Primeiro a gente prepara a câmera, depois a luz e o som. No final eu conto o resultado. Até a próxima!")
+          $s.Dispose()
+          $F = "bin\ffmpeg.exe"
+          & $F -v error -y -f lavfi -i "testsrc2=s=1080x1920:r=30" -i fala.wav -shortest -c:v libx264 -preset ultrafast -c:a aac teste\take_fala1.mp4
+          & $F -v error -y -f lavfi -i "testsrc2=s=1080x1920:r=30" -i fala.wav -shortest -c:v libx264 -preset ultrafast -c:a aac teste\take_fala2.mp4
+          foreach ($i in 1..4) { & $F -v error -y -f lavfi -i "mandelbrot=s=1920x1080:r=30" -f lavfi -i "anoisesrc=a=0.02" -t 8 -c:v libx264 -preset ultrafast -c:a aac "teste\local$i.mp4" }
+          & $F -v error -y -f lavfi -i "sine=f=220:d=90" -af volume=0.2 teste\trilha.mp3
+
+      - name: Testar a edição com o motor empacotado
+        shell: bash
+        env:
+          GREGIO_CONSOLE: "1"
+          GREGIO_DADOS: ${{ github.workspace }}/dados_teste
+        run: |
+          mkdir -p dados_teste
+          EXE="dist/backend/Gregio AutoEdit"; [ -f "$EXE.exe" ] && EXE="$EXE.exe"
+          inicio=$(date +%s)
+          "$EXE" --teste teste --saida resultado || true
+          fim=$(date +%s)
+          echo "Tempo da edição: $((fim-inicio)) s" | tee tempo.txt
+          cat dados_teste/gregio.log 2>/dev/null | tail -40 || true
+          ls -la resultado
+          test -f "resultado/teste.mp4"
+          test -f "resultado/CAPA - teste.jpg"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Gerar o app (Electron)
+        working-directory: electron
+        shell: bash
+        run: |
+          npm install --no-audit --no-fund
+          npx electron-builder ${{ matrix.eb }} --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.nome }}
+          path: |
+            release/*.dmg
+            release/*.exe
+            resultado/*.mp4
+            resultado/*.jpg
+            tempo.txt
+          if-no-files-found: warn
+
+  publicar:
+    needs: construir
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+      - name: Publicar para download (repositório público só com os instaladores)
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: eduardogregio38-create/gregio-autoedit-download
+          token: ${{ secrets.TOKEN_DOWNLOAD }}
+          tag_name: ${{ github.ref_name }}
+          name: Gregio AutoEdit ${{ github.ref_name }}
+          body: |
+            Baixe o arquivo do seu computador:
+            - Mac com chip Apple (M1, M2, M3, M4): Gregio-AutoEdit-mac-arm64.dmg
+            - Mac com Intel: Gregio-AutoEdit-mac-x64.dmg
+            - Windows: Gregio-AutoEdit-Windows-Instalador.exe
+          files: |
+            Mac-Intel/release/*.dmg
+            Mac-AppleSilicon/release/*.dmg
+            Windows/release/*.exe

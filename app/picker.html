@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Escolher pasta · Gregio AutoEdit</title>
+<style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0e0e12;color:#ececf1;
+font-family:-apple-system,"Segoe UI",Arial,sans-serif;text-align:center;padding:16px}
+.m{font-size:26px;margin-bottom:12px}.m b{font-weight:800;letter-spacing:2px}.m span{opacity:.75}
+button{background:#5b3df5;color:#fff;border:0;border-radius:9px;padding:12px 20px;font-size:15px;font-weight:600;cursor:pointer;margin:6px}
+button.claro{background:transparent;border:1px solid #2a2a34;color:#ececf1}p{opacity:.75;max-width:460px;margin:10px auto}</style></head>
+<body><div><div class="m"><b>GREGIO</b> <span>AutoEdit</span></div>
+<p id="msg">Escolha a pasta do seu Google Drive onde o app vai criar a pasta "Gregio AutoEdit".</p>
+<div id="bts"><button onclick="abrir()">Escolher pasta no Drive</button><button class="claro" onclick="raiz()">Usar a raiz do Meu Drive</button></div></div>
+<script>
+const CHAVE = location.hash.slice(1); if (location.hash) history.replaceState(null, "", location.pathname);
+const H = {"Content-Type":"application/json","X-Gregio-Chave":CHAVE};
+const msg = t => document.getElementById("msg").textContent = t;
+async function enviar(id, nome){
+  msg("Criando a pasta em " + nome + "...");
+  const r = await fetch("/api/destino", {method:"POST", headers:H, body:JSON.stringify({id, nome})});
+  if (r.ok){ msg("Pronto! A pasta Gregio AutoEdit está em " + nome + ". Pode fechar esta aba e voltar ao app."); document.getElementById("bts").style.display="none"; }
+  else msg("Não deu certo: " + ((await r.json()).erro || r.status));
+}
+function raiz(){ enviar(null, "Meu Drive"); }
+let carregou = null;
+function gapiPronto(){
+  if (carregou) return carregou;
+  carregou = new Promise((ok, erro)=>{ const s=document.createElement("script"); s.src="https://apis.google.com/js/api.js";
+    s.onload=()=>gapi.load("picker", {callback: ok, onerror: erro}); s.onerror=erro; document.head.appendChild(s); });
+  return carregou;
+}
+async function abrir(){
+  try{
+    const [cfg] = await Promise.all([fetch("/api/picker", {headers:H}).then(r=>{ if(!r.ok) throw new Error("Abra esta página pelo botão do app."); return r.json(); }), gapiPronto()]);
+    const vista = new google.picker.DocsView(google.picker.ViewId.FOLDERS)
+      .setIncludeFolders(true).setSelectFolderEnabled(true).setMimeTypes("application/vnd.google-apps.folder");
+    let p = new google.picker.PickerBuilder().addView(vista).setOAuthToken(cfg.token).setLocale("pt-BR")
+      .setTitle("Escolha onde criar a pasta Gregio AutoEdit").setOrigin(location.protocol + "//" + location.host)
+      .setCallback(d=>{ if (d.action === google.picker.Action.PICKED) enviar(d.docs[0].id, d.docs[0].name); });
+    if (cfg.chave) p = p.setDeveloperKey(cfg.chave);
+    if (cfg.app_id) p = p.setAppId(cfg.app_id);
+    p.build().setVisible(true);
+  }catch(e){ msg("Não consegui abrir o seletor do Google Drive. " + (e.message||"")); }
+}
+abrir();
+</script></body></html>

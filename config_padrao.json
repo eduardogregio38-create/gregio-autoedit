@@ -1,0 +1,70 @@
+{
+  "formato": "vertical",
+  "enquadramento": "fundo_desfocado",
+  "fps": 30,
+  "whisper_modelo": "base",
+  "idioma": "pt",
+  "selecao": {
+    "min_fala_seg": 1.5,
+    "pausa_max_seg": 0.6,
+    "margem_antes_seg": 0.25,
+    "margem_depois_seg": 0.4,
+    "duracao_local_seg": 3.0,
+    "max_takes_local": 16,
+    "remover_takes_repetidos": true,
+    "similaridade_repeticao": 0.6,
+    "duracao_max_final_seg": 120,
+    "fala_min_palavras": 5,
+    "fala_min_clareza": 0.6,
+    "fala_min_densidade": 0.3,
+    "fala_min_confianca": -0.9,
+    "duracao_min_final_seg": 30
+  },
+  "audio": {
+    "reducao_ruido": "rnnoise",
+    "som_ambiente_takes_local_db": -99,
+    "volume_musica_db": -16,
+    "ducking": true,
+    "loudness_final_lufs": -14
+  },
+  "transicoes": {
+    "entre_imagens": "corte",
+    "entre_cenas": "desfoque",
+    "para_encerramento": "corte",
+    "duracao_desfoque_seg": 0.35,
+    "intensidade_desfoque": 30,
+    "duracao_seg": 0.5,
+    "fade_inicio_fim": false
+  },
+  "legendas": {
+    "gerar_srt": true,
+    "queimar_no_video": false,
+    "max_caracteres": 24,
+    "fonte": "Poppins",
+    "tamanho": 9,
+    "negrito": false,
+    "cor": "&H00FFFFFF",
+    "cor_contorno": "&H00000000",
+    "contorno": 0.3,
+    "sombra": 0,
+    "margem_inferior": 108
+  },
+  "cobertura": {
+    "ativar": true,
+    "rosto_no_inicio_seg": 3.0,
+    "rosto_no_fim_seg": 2.5,
+    "locais_na_montagem": 5
+  },
+  "encerramento": {
+    "duracao_imagem_seg": 3
+  },
+  "ritmo": {
+    "ativar": true,
+    "duracao_min_seg": 2.0,
+    "duracao_max_seg": 4.0
+  },
+  "whisper_beam": 1,
+  "preset_x264": "veryfast",
+  "crf": 20,
+  "gerar_pacote": true
+}

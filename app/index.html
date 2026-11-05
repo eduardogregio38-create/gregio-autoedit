@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gregio AutoEdit</title>
+<style>
+:root{
+  --acento:#5b3df5; --acento-escuro:#4128c9; --vermelho:#e5484d; --verde:#1f9d63; --amarelo:#f2b630;
+  --fundo:#f4f4f7; --cartao:#ffffff; --texto:#17171c; --suave:#62626e; --linha:#e3e3ea; --topo:#111116;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --fundo:#0e0e12; --cartao:#18181f; --texto:#ececf1; --suave:#9d9daa; --linha:#2a2a34; --topo:#000; }
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Helvetica Neue",Arial,sans-serif;
+  background:var(--fundo);color:var(--texto);font-size:15px}
+header{background:var(--topo);color:#fff;padding:12px 28px;display:flex;align-items:center;gap:18px;position:sticky;top:0;z-index:5;flex-wrap:wrap}
+.marca{font-size:20px;letter-spacing:.2px;display:flex;align-items:baseline;gap:6px}
+.marca b{font-weight:800;letter-spacing:1.5px}
+.marca span{font-weight:400;opacity:.75}
+.marca i{width:9px;height:9px;border-radius:50%;background:var(--acento);display:inline-block;margin-left:2px}
+nav{display:flex;gap:4px;margin-left:auto}
+nav button{background:transparent;border:0;color:#fff;opacity:.7;font-size:15px;padding:9px 15px;border-radius:9px;cursor:pointer}
+nav button.ativo{opacity:1;background:rgba(255,255,255,.13);font-weight:600}
+nav .bolinha{display:inline-block;min-width:20px;padding:0 6px;border-radius:10px;background:var(--acento);font-size:12px;margin-left:6px}
+.conta{font-size:13px;opacity:.75;display:flex;gap:10px;align-items:center}
+.conta a{color:#fff}
+main{max-width:1100px;margin:0 auto;padding:26px 24px 60px}
+h2{font-size:20px;margin:6px 0 4px}
+h3{font-size:17px;margin:0 0 6px}
+.sub{color:var(--suave);margin:0 0 16px}
+.cartao{background:var(--cartao);border:1px solid var(--linha);border-radius:14px;padding:20px;margin-bottom:18px}
+.linha{display:flex;gap:14px;flex-wrap:wrap}
+.linha>*{flex:1;min-width:200px}
+label{font-size:13px;color:var(--suave);display:block;margin-bottom:6px}
+input[type=text],select,textarea{width:100%;padding:10px 12px;border:1px solid var(--linha);border-radius:9px;
+  background:var(--fundo);color:var(--texto);font-size:15px;font-family:inherit}
+textarea{min-height:70px}
+.solta{border:2px dashed var(--linha);border-radius:14px;padding:32px;text-align:center;color:var(--suave);cursor:pointer;margin-top:14px;transition:.15s}
+.solta.sobre{border-color:var(--acento);background:rgba(91,61,245,.07);color:var(--acento)}
+.solta strong{display:block;font-size:17px;color:var(--texto);margin-bottom:4px}
+.pasta{display:flex;align-items:center;gap:10px;font-weight:600;margin-bottom:12px}
+.pasta svg{width:26px;height:26px;color:var(--amarelo)}
+.lista-arq{margin:12px 0 0;padding:0;list-style:none;font-size:14px}
+.lista-arq li{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--linha)}
+.botao{background:var(--acento);color:#fff;border:0;border-radius:9px;padding:11px 18px;font-size:15px;font-weight:600;cursor:pointer}
+.botao:hover{background:var(--acento-escuro)}
+.botao:disabled{opacity:.45;cursor:default}
+.botao.verde{background:var(--verde)}
+.botao.vermelho{background:var(--vermelho)}
+.botao.claro{background:transparent;color:var(--acento);border:1px solid var(--linha)}
+.botao.pequeno{padding:7px 12px;font-size:13px}
+.botoes{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+.barra{height:8px;background:var(--linha);border-radius:6px;overflow:hidden;margin-top:8px}
+.barra>div{height:100%;background:var(--acento);transition:width .6s}
+.barra.anima>div{width:35%!important;animation:vai 1.4s ease-in-out infinite}
+@keyframes vai{0%{margin-left:-35%}100%{margin-left:100%}}
+.proj{display:flex;gap:16px;align-items:center;padding:14px 0;border-bottom:1px solid var(--linha)}
+.proj:last-child{border-bottom:0}
+.proj .info{flex:1;min-width:0}
+.nome{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.etiqueta{display:inline-block;font-size:12px;padding:3px 9px;border-radius:20px;background:var(--linha);color:var(--suave);margin-top:4px}
+.etiqueta.editando{background:rgba(91,61,245,.13);color:var(--acento)}
+.etiqueta.erro{background:rgba(229,72,77,.13);color:var(--vermelho)}
+.etiqueta.pronto{background:rgba(31,157,99,.13);color:var(--verde)}
+.tempo{font-size:12px;color:var(--suave);margin-left:8px}
+.grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px}
+.video{background:var(--cartao);border:1px solid var(--linha);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+.video .midias{display:flex;background:#000;height:340px}
+.video .midias>div{flex:1;height:100%;min-width:0;display:flex;align-items:center;justify-content:center;position:relative}
+.video img,.video video{width:100%;height:100%;object-fit:contain;display:block}
+.video .corpo{padding:14px 16px 16px}
+.video .detalhe{font-size:13px;color:var(--suave);margin-top:4px}
+.vazio{color:var(--suave);text-align:center;padding:26px}
+.ajuste{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--linha)}
+.ajuste .n{flex:1;min-width:0}
+.ajuste .v{min-width:64px;text-align:center;font-weight:600}
+.ajuste button.mm{width:34px;height:34px;border-radius:8px;border:1px solid var(--linha);background:var(--fundo);color:var(--texto);font-size:18px;cursor:pointer}
+.ajuste small{color:var(--suave);display:block}
+.hist{font-size:14px;padding:10px 0;border-bottom:1px solid var(--linha)}
+.hist .q{color:var(--suave);font-size:12px}
+.fundo-modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:20;padding:16px}
+.modal{background:var(--cartao);border-radius:16px;padding:22px;max-width:520px;width:100%;max-height:90vh;overflow:auto}
+.motivos label{display:flex;gap:10px;align-items:center;color:var(--texto);font-size:15px;padding:7px 0;cursor:pointer}
+.aviso{background:rgba(242,182,48,.16);border-radius:10px;padding:10px 14px;font-size:14px;margin-bottom:14px}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#17171c;color:#fff;padding:12px 18px;border-radius:10px;
+  font-size:14px;display:none;z-index:30;max-width:90%}
+#entrar{max-width:480px;margin:70px auto;text-align:center}
+#entrar .marca{justify-content:center;font-size:30px;color:var(--texto);margin-bottom:10px}
+.chip{display:inline-block;font-size:12px;padding:3px 9px;border-radius:20px;border:1px solid var(--linha);margin:3px 4px 0 0;color:var(--suave)}
+a{color:var(--acento)}
+@media (max-width:640px){ header{padding:12px 16px} main{padding:20px 16px 50px} nav{margin-left:0;width:100%} }
+</style>
+</head>
+<body>
+<header>
+  <div class="marca"><b>GREGIO</b><span>AutoEdit</span><i></i></div>
+  <nav id="abas">
+    <button data-aba="midias" class="ativo">Mídias</button>
+    <button data-aba="prontos">Vídeos prontos <span class="bolinha" id="n-prontos" style="display:none"></span></button>
+    <button data-aba="ajustes">Ajustes</button>
+  </nav>
+  <div class="conta" id="conta"></div>
+</header>
+
+<main>
+  <section id="entrar" style="display:none" class="cartao">
+    <div class="marca"><b>GREGIO</b><span>AutoEdit</span><i></i></div>
+    <p class="sub">Edição automática de vídeos para Reels. Entre com a sua conta Google: os vídeos aprovados vão para uma pasta "Gregio AutoEdit" no seu Drive.</p>
+    <button class="botao" id="b-login">Entrar com Google</button>
+    <p class="sub" id="login-erro" style="margin-top:14px"></p>
+  </section>
+
+  <!-- ===================== MÍDIAS ===================== -->
+  <section id="aba-midias">
+    <h2>Mídias</h2>
+    <p class="sub">Coloque aqui os takes de um vídeo. A edição acontece neste computador e começa assim que os arquivos entram.</p>
+    <div class="cartao" id="destino" style="display:none;border-color:var(--acento)">
+      <h3>Onde salvar no seu Google Drive?</h3>
+      <p class="sub">Escolha uma pasta do seu Drive. O app cria dentro dela a pasta "Gregio AutoEdit", onde ficam os vídeos aprovados e os seus ajustes.</p>
+      <div class="botoes" style="margin-top:0"><button class="botao" onclick="escolherPasta()">Escolher pasta no Drive</button>
+        <button class="botao claro" onclick="usarRaiz()">Usar a raiz do Meu Drive</button></div>
+    </div>
+    <div class="aviso" id="aviso-musicas" style="display:none">Você ainda não tem músicas no app. O vídeo sai sem trilha. Adicione algumas em <a href="#" onclick="abrirAba('ajustes');return false">Ajustes › Músicas</a>.</div>
+
+    <div class="cartao">
+      <div class="pasta"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 4l2 2h8a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2h6z"/></svg>Vídeos para editar</div>
+      <div class="linha">
+        <div style="flex:2"><label>Nome do vídeo</label>
+          <input type="text" id="nome" placeholder="Ex.: Bastidores da gravação"></div>
+        <div style="flex:2"><label>Título da capa (opcional, se for diferente do nome)</label>
+          <input type="text" id="titulo" placeholder="Igual ao nome"></div>
+        <div><label>Estilo da música</label><select id="estilo"></select></div>
+      </div>
+      <div class="solta" id="solta">
+        <strong>Arraste os vídeos para cá</strong>
+        ou clique para escolher. Se quiser uma música específica para este vídeo, coloque o mp3 junto.
+        <input type="file" id="arquivos" multiple accept="video/*,audio/*" style="display:none">
+      </div>
+      <ul class="lista-arq" id="lista-arq"></ul>
+      <div class="botoes"><button class="botao" id="b-enviar" disabled>Editar</button>
+        <button class="botao claro" id="b-limpar" style="display:none">Limpar</button></div>
+    </div>
+
+    <div class="cartao">
+      <h3>Andamento</h3>
+      <div id="andamento"><div class="vazio">Nada sendo editado agora.</div></div>
+    </div>
+  </section>
+
+  <!-- ===================== PRONTOS ===================== -->
+  <section id="aba-prontos" style="display:none">
+    <h2>Esperando sua aprovação</h2>
+    <p class="sub">Assista ao vídeo. Aprovando, ele vai para o seu Google Drive. Reprovando, você diz o que não gostou e o app monta de novo e aprende para os próximos.</p>
+    <div class="grade" id="previas"></div>
+    <h2 style="margin-top:34px">Aprovados</h2>
+    <p class="sub">Ficam no seu Drive e também neste computador. <a href="#" id="abrir-prontos">Abrir a pasta</a></p>
+    <div class="grade" id="finais"></div>
+  </section>
+
+  <!-- ===================== AJUSTES ===================== -->
+  <section id="aba-ajustes" style="display:none">
+    <h2>Ajustes</h2>
+    <p class="sub">O padrão de edição muda sozinho quando você reprova um vídeo, e você também pode mudar aqui. Fica salvo no seu Drive, então vale em qualquer computador em que você entrar.</p>
+
+    <div class="cartao"><h3>Padrão da edição</h3><div id="ajustes"></div>
+      <div class="botoes"><button class="botao claro" id="b-restaurar">Voltar tudo ao padrão</button></div></div>
+
+    <div class="cartao"><h3>Músicas</h3>
+      <p class="sub">Use só músicas instrumentais que você tem direito de usar. O app escolhe pelo estilo do vídeo.</p>
+      <div class="linha" style="align-items:flex-end">
+        <div style="max-width:240px"><label>Estilo das músicas que vai adicionar</label><select id="estilo-musica"></select></div>
+        <div style="flex:0 0 auto;min-width:0"><button class="botao" id="b-add-musica">Adicionar músicas</button>
+          <input type="file" id="arq-musica" multiple accept="audio/*" style="display:none"></div>
+        <div style="flex:0 0 auto;min-width:0"><button class="botao claro" onclick="api('/api/abrir',{onde:'musicas'})">Abrir pasta</button></div>
+      </div>
+      <p class="sub" id="envio-musica" style="margin-top:10px"></p>
+      <div id="musicas"></div>
+      <h3 style="margin-top:20px;font-size:15px">Músicas que o app parou de usar</h3>
+      <div id="evitar"></div>
+    </div>
+
+    <div class="cartao"><h3>Sua marca (opcional)</h3>
+      <div class="linha">
+        <div><label>Logo na capa (PNG com fundo transparente)</label>
+          <div id="logo-estado" class="sub"></div>
+          <div class="botoes" style="margin-top:0"><button class="botao claro pequeno" onclick="$('#arq-logo').click()">Escolher logo</button>
+          <button class="botao claro pequeno" id="b-tirar-logo" onclick="tirarMarca('logo')">Tirar</button></div>
+          <input type="file" id="arq-logo" accept="image/png,image/jpeg" style="display:none"></div>
+        <div><label>Tela final (vídeo ou imagem que entra no fim de todo vídeo)</label>
+          <div id="enc-estado" class="sub"></div>
+          <div class="botoes" style="margin-top:0"><button class="botao claro pequeno" onclick="$('#arq-enc').click()">Escolher arquivo</button>
+          <button class="botao claro pequeno" id="b-tirar-enc" onclick="tirarMarca('encerramento')">Tirar</button></div>
+          <input type="file" id="arq-enc" accept="video/*,image/png,image/jpeg" style="display:none"></div>
+      </div>
+    </div>
+
+    <div class="cartao"><h3>Pasta no Google Drive</h3>
+      <p class="sub" id="destino-atual"></p>
+      <div class="botoes" style="margin-top:0"><button class="botao claro pequeno" onclick="escolherPasta()">Trocar a pasta</button></div>
+    </div>
+
+    <div class="cartao"><h3>O que o app aprendeu</h3><div id="historico"></div></div>
+  </section>
+</main>
+
+<div class="fundo-modal" id="modal"><div class="modal">
+  <h2 id="m-titulo">O que não ficou bom?</h2>
+  <p class="sub">Marque o que quiser. O app ajusta este vídeo e os próximos.</p>
+  <div class="motivos" id="m-motivos"></div>
+  <label style="margin-top:12px">Observação (opcional)</label>
+  <textarea id="m-nota" placeholder="Ex.: a capa ficou com a pessoa de olho fechado"></textarea>
+  <div class="botoes"><button class="botao vermelho" id="m-ok">Reprovar e refazer</button>
+    <button class="botao claro" id="m-cancelar">Cancelar</button></div>
+</div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const CHAVE = (()=>{ let c = location.hash.slice(1); try{ if (c) sessionStorage.setItem("gk", c); else c = sessionStorage.getItem("gk") || ""; }catch(e){} if (location.hash) history.replaceState(null, "", location.pathname); return c; })();
+const comChave = url => url + (url.includes("?") ? "&" : "?") + "t=" + encodeURIComponent(CHAVE);
+let ESTADO = {}, ARQS = [], ENVIANDO = false, MODAL = null, PROJ = [];
+
+function toast(t, ms=4500){ const e=$("#toast"); e.textContent=t; e.style.display="block"; clearTimeout(e._t); e._t=setTimeout(()=>e.style.display="none", ms); }
+async function api(caminho, dados){
+  const op = dados===undefined ? {headers:{"X-Gregio-Chave":CHAVE}} : {method:"POST", headers:{"Content-Type":"application/json","X-Gregio-Chave":CHAVE}, body:JSON.stringify(dados)};
+  const r = await fetch(caminho, op); const j = await r.json().catch(()=>({}));
+  if (!r.ok) throw new Error(j.erro || "Erro");
+  return j;
+}
+function enviarArquivo(url, arquivo, aoProgresso){
+  return new Promise((ok, erro)=>{
+    const x = new XMLHttpRequest(); x.open("POST", url); x.setRequestHeader("X-Gregio-Chave", CHAVE);
+    x.upload.onprogress = e=> aoProgresso && aoProgresso(e.loaded/e.total);
+    x.onload = ()=> x.status<300 ? ok() : erro(new Error(JSON.parse(x.responseText||"{}").erro||"Erro")); x.onerror = ()=>erro(new Error("Falha"));
+    x.send(arquivo);
+  });
+}
+const esc = s => String(s??"").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function tamanho(b){ return b>1e9 ? (b/1e9).toFixed(1)+" GB" : Math.max(1,(b/1e6)).toFixed(0)+" MB"; }
+function minutos(s){ if (s==null) return ""; s=Math.round(s); return s<60 ? s+" s" : Math.floor(s/60)+" min"+(s%60? " "+(s%60)+" s":""); }
+function rotulo(s){ return s==="automatico" ? "Automático" : s[0].toUpperCase()+s.slice(1); }
+
+// ---------- abas ----------
+document.querySelectorAll("#abas button").forEach(b=>b.onclick=()=>abrirAba(b.dataset.aba));
+function abrirAba(a){
+  document.querySelectorAll("#abas button").forEach(b=>b.classList.toggle("ativo", b.dataset.aba===a));
+  ["midias","prontos","ajustes"].forEach(x=>$("#aba-"+x).style.display = x===a ? "" : "none");
+  if (a==="ajustes") carregarAjustes();
+  try{ localStorage.setItem("aba", a); }catch(e){}
+}
+
+// ---------- login ----------
+function mostrarLogin(sim){
+  $("#entrar").style.display = sim ? "" : "none";
+  if (sim) ["midias","prontos","ajustes"].forEach(x=>$("#aba-"+x).style.display="none");
+  $("#abas").style.visibility = sim ? "hidden" : "visible";
+}
+$("#b-login").onclick = async ()=>{ await api("/api/login", {}); $("#login-erro").textContent="Abri uma aba do navegador para você escolher a conta. Depois de autorizar, volte para cá."; esperarLogin(); };
+async function esperarLogin(){
+  for (let i=0;i<240;i++){ await new Promise(r=>setTimeout(r,2500));
+    const e = await api("/api/estado"); if (e.erro_login) { $("#login-erro").textContent="Não deu certo: "+e.erro_login; return; }
+    if (e.logado){ mostrarLogin(false); iniciar(); return; } }
+}
+async function sair(){ if(!confirm("Sair da conta Google neste computador?")) return; await api("/api/sair",{}); location.reload(); }
+
+// ---------- envio ----------
+const solta = $("#solta");
+solta.onclick = ()=> $("#arquivos").click();
+$("#arquivos").onchange = e => { adicionar(e.target.files); e.target.value=""; };
+["dragenter","dragover"].forEach(ev=>solta.addEventListener(ev, e=>{e.preventDefault(); solta.classList.add("sobre");}));
+["dragleave","drop"].forEach(ev=>solta.addEventListener(ev, e=>{e.preventDefault(); solta.classList.remove("sobre");}));
+solta.addEventListener("drop", e=> adicionar(e.dataTransfer.files));
+function adicionar(lista){ for (const f of lista) if(!ARQS.find(a=>a.name===f.name && a.size===f.size)) ARQS.push(f); desenharArqs(); }
+$("#b-limpar").onclick = ()=>{ ARQS=[]; desenharArqs(); };
+function desenharArqs(estados){
+  $("#lista-arq").innerHTML = ARQS.map((f,i)=>`<li><span>${esc(f.name)}</span><span>${estados?estados[i]:tamanho(f.size)}</span></li>`).join("");
+  $("#b-enviar").disabled = !ARQS.length || ENVIANDO;
+  $("#b-limpar").style.display = ARQS.length && !ENVIANDO ? "" : "none";
+}
+const ehVideo = f => f.type.startsWith("video") || /\.(mov|mp4|m4v|mkv|avi|mts|3gp|webm)$/i.test(f.name);
+$("#b-enviar").onclick = async ()=>{
+  const nome = $("#nome").value.trim();
+  if (!nome){ toast("Dê um nome ao vídeo."); $("#nome").focus(); return; }
+  if (!ARQS.some(ehVideo)){ toast("Coloque pelo menos um vídeo."); return; }
+  ENVIANDO = true; desenharArqs();
+  try{
+    const {id} = await api("/api/novo", {nome, titulo:$("#titulo").value, estilo:$("#estilo").value});
+    const estados = ARQS.map(()=> "aguardando");
+    for (let i=0;i<ARQS.length;i++){
+      await enviarArquivo(`/api/arquivo?id=${id}&nome=${encodeURIComponent(ARQS[i].name)}`, ARQS[i],
+        p=>{ estados[i] = "copiando "+Math.round(p*100)+"%"; desenharArqs(estados); });
+      estados[i] = "ok"; desenharArqs(estados);
+    }
+    await api("/api/concluir", {id});
+    ARQS = []; $("#nome").value=""; $("#titulo").value="";
+    toast("Pronto! A edição já começou. Acompanhe em Andamento.");
+  }catch(e){ toast("Erro: "+e.message); }
+  ENVIANDO=false; desenharArqs(); atualizar();
+};
+
+// ---------- andamento ----------
+function linhaProj(p){
+  let barra = "", texto = esc(p.etapa||""), botoes = "", cls = "", tempo = "";
+  if (p.estado==="editando"){
+    cls = "editando";
+    texto = esc(p.etapa) + (p.total ? ` (${Math.min(p.atual+ (p.etapa.startsWith("Analisando")?1:0), p.total)} de ${p.total})` : "");
+    barra = `<div class="barra"><div style="width:${p.pct||0}%"></div></div>`;
+    tempo = `<span class="tempo">${Math.round(p.pct||0)}% · ${minutos(p.decorrido)}${p.restante!=null ? " · faltam uns "+minutos(Math.max(p.restante,10)) : ""}</span>`;
+  } else if (p.estado==="na_fila"){
+    texto = p.posicao ? (p.posicao===1 && !PROJ.some(x=>x.estado==="editando") ? "Começando" : `Na fila (${p.posicao}º)`) : "Na fila";
+    barra = `<div class="barra anima"><div></div></div>`;
+  } else if (p.estado==="recebendo"){
+    texto = "Recebendo os vídeos";
+  } else if (p.estado==="enviando"){
+    cls = "editando"; texto = "Enviando para o seu Google Drive";
+    barra = `<div class="barra"><div style="width:${p.pct||0}%"></div></div>`;
+    tempo = `<span class="tempo">${Math.round(p.pct||0)}%</span>`;
+  } else if (p.estado==="erro"){
+    cls = "erro"; texto = "Deu erro: " + esc(p.erro||"");
+    botoes = `<button class="botao claro pequeno" onclick="acao('tentar_de_novo','${p.id}')">Tentar de novo</button>
+              <button class="botao claro pequeno" style="color:var(--vermelho)" onclick="excluir('${p.id}')">Excluir</button>`;
+  }
+  return `<div class="proj"><div class="info"><div class="nome">${esc(p.nome)}</div>
+    <span class="etiqueta ${cls}">${texto}</span>${tempo}${barra}</div>${botoes}</div>`;
+}
+
+// ---------- prontos ----------
+const midia = (p,k)=> comChave(`/api/arquivo?id=${p.id}&k=${k}`);
+function cardPrevia(p){
+  return `<div class="video"><div class="midias">
+      <div>${p.tem.video ? `<video controls playsinline preload="metadata" src="${midia(p,'video')}"></video>` : ""}</div>
+      <div>${p.tem.capa ? `<img loading="lazy" src="${midia(p,'capa')}&v=${p.segundos}">` : ""}</div></div>
+    <div class="corpo"><div class="nome">${esc(p.nome)}</div>
+      <div class="detalhe">${p.duracao? p.duracao+" s de vídeo":""}${p.segundos? " · editado em "+minutos(p.segundos):""}${p.musica_nome? " · música: "+esc(p.musica_nome):" · sem música"}</div>
+      <div class="botoes"><button class="botao verde" onclick="acao('aprovar','${p.id}')">Aprovar</button>
+      <button class="botao vermelho" onclick="reprovar('reprovar','${p.id}')">Reprovar</button>
+      <button class="botao claro" onclick="excluir('${p.id}')">Excluir</button></div></div></div>`;
+}
+function cardFinal(p){
+  const b = (rot, k) => p.tem[k] ? `<a class="botao claro pequeno" style="text-decoration:none" href="${midia(p,k)}&baixar=1">${rot}</a>` : "";
+  return `<div class="video"><div class="midias" style="height:300px">
+      <div>${p.tem.capa ? `<img loading="lazy" src="${midia(p,'capa')}">` : ""}</div></div>
+    <div class="corpo"><div class="nome">${esc(p.nome)}</div>
+      <div class="detalhe">${p.erro_drive ? `<span style="color:var(--vermelho)">${esc(p.erro_drive)}</span> <a href="#" onclick="acao('reenviar_drive','${p.id}');return false">Tentar de novo</a>`
+        : (p.drive_link ? `<a href="${p.drive_link}" target="_blank">Abrir no Google Drive</a>` : "")}${p.aprovado_em? " · "+esc(p.aprovado_em):""}</div>
+      <div class="botoes">${b("Vídeo","video")}${b("Capa","capa")}${b("Legenda","legenda")}${b("Pacote CapCut/Premiere","pacote")}
+      <button class="botao claro pequeno" onclick="api('/api/abrir',{id:'${p.id}',k:'video'})">Mostrar na pasta</button>
+      <button class="botao claro pequeno" style="color:var(--vermelho)" onclick="reprovar('refazer','${p.id}')">Refazer</button></div></div></div>`;
+}
+window.acao = async (acao, id, extra={})=>{
+  try{ const r = await api("/api/acao", {acao, id, ...extra});
+    let t = {aprovar:"Aprovado! Enviando para o seu Drive.", reprovar:"Vou montar de novo.", refazer:"Vou refazer este vídeo.",
+             tentar_de_novo:"Voltou para a fila.", reenviar_drive:"Enviando de novo.", excluir:"Excluído."}[acao];
+    if (r.mudancas && r.mudancas.length) t += " Aprendi: " + r.mudancas.join("; ") + ".";
+    toast(t, 7000); atualizar();
+  }catch(e){ toast("Erro: "+e.message); }
+};
+window.excluir = id => { if (confirm("Excluir este vídeo e os takes dele deste computador?")) acao("excluir", id); };
+window.reprovar = (acao, id)=>{
+  MODAL = {acao, id};
+  $("#m-titulo").textContent = acao==="reprovar" ? "O que não ficou bom?" : "O que precisa mudar neste vídeo?";
+  $("#m-motivos").innerHTML = Object.entries(ESTADO.motivos).map(([k,t])=>`<label><input type="checkbox" value="${k}"> ${esc(t)}</label>`).join("");
+  $("#m-nota").value = ""; $("#modal").style.display="flex";
+};
+$("#m-cancelar").onclick = ()=> $("#modal").style.display="none";
+$("#m-ok").onclick = ()=>{
+  const motivos = [...document.querySelectorAll("#m-motivos input:checked")].map(i=>i.value);
+  $("#modal").style.display="none"; acao(MODAL.acao, MODAL.id, {motivos, nota:$("#m-nota").value});
+};
+$("#abrir-prontos").onclick = e=>{ e.preventDefault(); api("/api/abrir", {}); };
+
+// ---------- ajustes ----------
+async function carregarAjustes(){
+  const a = await api("/api/aprendizado");
+  $("#ajustes").innerHTML = Object.entries(a.ajustes).map(([k,m])=>`<div class="ajuste"><div class="n">${esc(m.nome)}<small>padrão: ${m.padrao}</small></div>
+    <button class="mm" onclick="mudar('${k}', ${m.valor}-${m.passo})">−</button><div class="v">${m.valor}</div><button class="mm" onclick="mudar('${k}', ${m.valor}+${m.passo})">+</button></div>`).join("");
+  $("#evitar").innerHTML = a.evitar.length ? a.evitar.map(m=>`<div class="ajuste"><div class="n">${esc(m)}</div><button class="botao claro pequeno" onclick='liberar(${JSON.stringify(m)})'>Voltar a usar</button></div>`).join("")
+    : `<div class="vazio">Nenhuma. Quando você reprovar marcando "a música não combinou", ela aparece aqui.</div>`;
+  $("#historico").innerHTML = a.historico.length ? a.historico.map(h=>`<div class="hist"><div class="q">${esc(h.data)}${h.projeto? " · "+esc(h.projeto):""}${h.projeto? " · "+(h.aprovado?"aprovado":"reprovado"):""}</div>
+    ${h.motivos.length? "<div>Motivos: "+esc(h.motivos.join(", "))+"</div>":""}${h.nota && h.nota!=="Ajuste manual"? "<div>Obs.: "+esc(h.nota)+"</div>":""}
+    <div>${h.mudancas.length? "Mudou: "+esc(h.mudancas.join("; ")) : "Nenhum ajuste automático"}</div></div>`).join("")
+    : `<div class="vazio">Ainda nada. Cada aprovação e reprovação fica registrada aqui.</div>`;
+  $("#logo-estado").innerHTML = a.logo ? `<img src="${comChave('/api/logo?v='+Date.now())}" style="max-height:60px;background:#333;padding:6px;border-radius:6px">` : "Sem logo: a capa sai só com o título.";
+  $("#b-tirar-logo").style.display = a.logo ? "" : "none";
+  $("#enc-estado").textContent = a.encerramento ? "Usando: "+a.encerramento : "Sem tela final.";
+  $("#b-tirar-enc").style.display = a.encerramento ? "" : "none";
+  carregarMusicas();
+}
+async function carregarMusicas(){
+  const {musicas} = await api("/api/musicas");
+  const por = {}; musicas.forEach(m=> (por[m.estilo] = por[m.estilo]||[]).push(m));
+  $("#musicas").innerHTML = musicas.length ? Object.entries(por).map(([e,l])=>`<div style="margin-top:12px"><b>${rotulo(e)}</b> <span class="sub">(${l.length})</span>
+      ${l.map(m=>`<div class="ajuste"><div class="n" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.nome)}</div>
+      <audio controls preload="none" style="height:32px;max-width:220px" src="${comChave(`/api/ouvir?estilo=${encodeURIComponent(e)}&nome=${encodeURIComponent(m.nome)}`)}"></audio>
+      <button class="botao claro pequeno" style="color:var(--vermelho)" onclick='apagarMusica(${JSON.stringify(e)},${JSON.stringify(m.nome)})'>Tirar</button></div>`).join("")}</div>`).join("")
+    : `<div class="vazio">Nenhuma música ainda.</div>`;
+}
+window.apagarMusica = async (estilo, nome)=>{ if(confirm("Tirar a música "+nome+"?")){ await api("/api/musica",{apagar:nome, estilo}); carregarMusicas(); atualizarEstado(); } };
+$("#b-add-musica").onclick = ()=> $("#arq-musica").click();
+$("#arq-musica").onchange = async e=>{
+  const arqs=[...e.target.files]; e.target.value="";
+  for (let i=0;i<arqs.length;i++){ $("#envio-musica").textContent = `Adicionando ${i+1} de ${arqs.length}: ${arqs[i].name}`;
+    try{ await enviarArquivo(`/api/enviar_musica?estilo=${$("#estilo-musica").value}&nome=${encodeURIComponent(arqs[i].name)}`, arqs[i]); }catch(er){ toast(arqs[i].name+": "+er.message); } }
+  $("#envio-musica").textContent = ""; carregarMusicas(); atualizarEstado();
+};
+async function marca(tipo, f){ try{ await enviarArquivo(`/api/marca?tipo=${tipo}&nome=${encodeURIComponent(f.name)}`, f); toast("Salvo. Vale para os próximos vídeos."); }catch(e){ toast("Erro: "+e.message); } carregarAjustes(); }
+$("#arq-logo").onchange = e=>{ if(e.target.files[0]) marca("logo", e.target.files[0]); e.target.value=""; };
+$("#arq-enc").onchange = e=>{ if(e.target.files[0]) marca("encerramento", e.target.files[0]); e.target.value=""; };
+window.tirarMarca = async tipo=>{ await fetch(`/api/marca?tipo=${tipo}&apagar=1`, {method:"POST", headers:{"X-Gregio-Chave":CHAVE}}); carregarAjustes(); };
+window.mudar = async (chave, valor)=>{ await api("/api/ajuste", {chave, valor:Math.round(valor*100)/100}); carregarAjustes(); };
+window.liberar = async m=>{ await api("/api/musica", {liberar:m}); carregarAjustes(); };
+$("#b-restaurar").onclick = async ()=>{ if(confirm("Voltar todos os ajustes ao padrão?")){ await api("/api/ajuste", {restaurar:true}); carregarAjustes(); } };
+
+// ---------- pasta no Drive: o seletor do Google abre no navegador (onde a pessoa já está logada) ----------
+window.escolherPasta = async ()=>{
+  try{ await api("/api/abrir_picker", {}); toast("Abri o seletor de pastas no seu navegador. Escolha a pasta lá e volte para cá.", 8000); }
+  catch(e){ toast("Erro: "+e.message); }
+};
+window.usarRaiz = async ()=>{ try{ await api("/api/destino", {id:null, nome:"Meu Drive"}); toast("Pronto! A pasta Gregio AutoEdit está na raiz do seu Drive."); }catch(e){ toast("Erro: "+e.message); } atualizarEstado(); };
+setInterval(()=>{ if (!document.hidden && ESTADO.logado && !ESTADO.destino) atualizarEstado(); }, 4000);
+
+// ---------- atualização ----------
+let chavePrevias = "", chaveFinais = "";
+async function atualizarEstado(){
+  ESTADO = await api("/api/estado");
+  $("#aviso-musicas").style.display = ESTADO.n_musicas ? "none" : "";
+  $("#destino").style.display = ESTADO.logado && !ESTADO.destino ? "" : "none";
+  $("#destino-atual").innerHTML = ESTADO.destino ? `Os vídeos aprovados vão para <b>${esc(ESTADO.destino)} › Gregio AutoEdit</b>. ${ESTADO.drive? `<a href="${ESTADO.drive}" target="_blank">Abrir no Drive</a>`:""}` : "Ainda não escolhida.";
+  $("#conta").innerHTML = ESTADO.logado ? `${esc(ESTADO.email)}${ESTADO.drive? ` · <a href="${ESTADO.drive}" target="_blank">Drive</a>`:""} · <a href="#" onclick="sair();return false">Sair</a>` : "";
+}
+async function atualizar(){
+  try{
+    const {projetos} = await api("/api/projetos"); PROJ = projetos;
+    const andamento = projetos.filter(p=>["recebendo","na_fila","editando","enviando","erro"].includes(p.estado));
+    $("#andamento").innerHTML = andamento.map(linhaProj).join("") || `<div class="vazio">Nada sendo editado agora.</div>`;
+    const previas = projetos.filter(p=>p.estado==="previa"), finais = projetos.filter(p=>p.estado==="pronto");
+    const c1 = JSON.stringify(previas.map(p=>p.id+p.segundos));
+    if (c1 !== chavePrevias){ $("#previas").innerHTML = previas.map(cardPrevia).join("") || `<div class="vazio">Nenhum vídeo esperando.</div>`; chavePrevias = c1; }
+    const c2 = JSON.stringify(finais.map(p=>p.id+(p.drive_link||"")+(p.erro_drive||"")));
+    if (c2 !== chaveFinais){ $("#finais").innerHTML = finais.map(cardFinal).join("") || `<div class="vazio">Nenhum vídeo aprovado ainda.</div>`; chaveFinais = c2; }
+    $("#n-prontos").textContent = previas.length; $("#n-prontos").style.display = previas.length ? "" : "none";
+  }catch(e){ console.log(e); }
+}
+async function iniciar(){
+  await atualizarEstado();
+  $("#estilo").innerHTML = ESTADO.estilos.map(s=>`<option value="${s}">${rotulo(s)}</option>`).join("");
+  $("#estilo-musica").innerHTML = ESTADO.estilos.slice(1).map(s=>`<option value="${s}">${rotulo(s)}</option>`).join("");
+  if (!ESTADO.logado){ mostrarLogin(true); return; }
+  mostrarLogin(false);
+  let aba = "midias"; try{ aba = localStorage.getItem("aba") || "midias"; }catch(e){}
+  abrirAba(aba);
+  atualizar();
+  if (!window._timer) window._timer = setInterval(()=>{ if (!document.hidden) atualizar(); }, 2000);
+}
+iniciar();
+</script>
+</body>
+</html>
