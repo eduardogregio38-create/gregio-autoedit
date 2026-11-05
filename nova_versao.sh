@@ -6,7 +6,8 @@ VERSAO="${1:?Informe a versão, ex.: 2.1.0}"
 ORIGEM="$(cd "$(dirname "$0")" && pwd)"
 REPO="$HOME/gregio-autoedit"
 cd "$REPO"
-rsync -a --delete --exclude .git "$ORIGEM/" "$REPO/"
+find "$REPO" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+cp -a "$ORIGEM/." "$REPO/"
 git add -A
 git -c user.name="Eduardo Gregio" -c user.email="eduardogregio38@gmail.com" commit -qm "Gregio AutoEdit $VERSAO" || true
 git push -q origin main

@@ -44,6 +44,13 @@ textarea{min-height:70px}
 .pasta svg{width:26px;height:26px;color:var(--amarelo)}
 .lista-arq{margin:12px 0 0;padding:0;list-style:none;font-size:14px}
 .lista-arq li{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--linha)}
+.ordem{margin:14px 0 0;padding:0;list-style:none;font-size:14px}
+.ordem li{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--linha)}
+.ordem .pos{width:56px;padding:7px 8px;border:1px solid var(--linha);border-radius:8px;background:var(--fundo);color:var(--texto);font-size:15px;font-weight:600;text-align:center}
+.ordem .n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ordem .t{color:var(--suave);font-size:13px;white-space:nowrap}
+.ordem .mv{width:32px;height:32px;border-radius:8px;border:1px solid var(--linha);background:var(--fundo);color:var(--texto);font-size:15px;cursor:pointer}
+.ordem .mv:disabled{opacity:.35;cursor:default}
 .botao{background:var(--acento);color:#fff;border:0;border-radius:9px;padding:11px 18px;font-size:15px;font-weight:600;cursor:pointer}
 .botao:hover{background:var(--acento-escuro)}
 .botao:disabled{opacity:.45;cursor:default}
@@ -98,6 +105,7 @@ a{color:var(--acento)}
   <div class="marca"><b>GREGIO</b><span>AutoEdit</span><i></i></div>
   <nav id="abas">
     <button data-aba="midias" class="ativo">Mídias</button>
+    <button data-aba="entrevistas">Entrevistas</button>
     <button data-aba="prontos">Vídeos prontos <span class="bolinha" id="n-prontos" style="display:none"></span></button>
     <button data-aba="ajustes">Ajustes</button>
   </nav>
@@ -151,6 +159,35 @@ a{color:var(--acento)}
     <div class="cartao">
       <h3>Andamento</h3>
       <div id="andamento"><div class="vazio">Nada sendo editado agora.</div></div>
+    </div>
+  </section>
+
+  <!-- ===================== ENTREVISTAS ===================== -->
+  <section id="aba-entrevistas" style="display:none">
+    <h2>Entrevistas</h2>
+    <p class="sub">Para vídeos em que todos os takes são fala. O vídeo sai na ordem que você definir aqui, sem imagens por cima e sem descartar nenhum take. O app só tira as pausas longas e os "hum" soltos.</p>
+    <div class="cartao">
+      <div class="pasta"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 4l2 2h8a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2h6z"/></svg>Takes da entrevista</div>
+      <div class="linha">
+        <div style="flex:2"><label>Nome do vídeo</label>
+          <input type="text" id="nome-ent" placeholder="Ex.: Entrevista com a coordenadora"></div>
+        <div style="flex:2"><label>Título da capa (opcional, se for diferente do nome)</label>
+          <input type="text" id="titulo-ent" placeholder="Igual ao nome"></div>
+        <div><label>Música de fundo</label><select id="estilo-ent"></select></div>
+      </div>
+      <div class="solta" id="solta-ent">
+        <strong>Arraste os vídeos para cá</strong>
+        ou clique para escolher. Depois ajuste a ordem na lista abaixo.
+        <input type="file" id="arquivos-ent" multiple accept="video/*" style="display:none">
+      </div>
+      <ol class="ordem" id="lista-ent"></ol>
+      <p class="sub" id="dica-ent" style="display:none;margin:10px 0 0">Para mudar a ordem, digite a posição no número da esquerda ou use as setas.</p>
+      <div class="botoes"><button class="botao" id="b-enviar-ent" disabled>Editar entrevista</button>
+        <button class="botao claro" id="b-limpar-ent" style="display:none">Limpar</button></div>
+    </div>
+    <div class="cartao">
+      <h3>Andamento</h3>
+      <div id="andamento-ent"><div class="vazio">Nada sendo editado agora.</div></div>
     </div>
   </section>
 
@@ -257,7 +294,7 @@ function rotulo(s){ return s==="automatico" ? "Automático" : s[0].toUpperCase()
 document.querySelectorAll("#abas button").forEach(b=>b.onclick=()=>abrirAba(b.dataset.aba));
 function abrirAba(a){
   document.querySelectorAll("#abas button").forEach(b=>b.classList.toggle("ativo", b.dataset.aba===a));
-  ["midias","prontos","ajustes"].forEach(x=>$("#aba-"+x).style.display = x===a ? "" : "none");
+  ["midias","entrevistas","prontos","ajustes"].forEach(x=>$("#aba-"+x).style.display = x===a ? "" : "none");
   if (a==="ajustes") carregarAjustes();
   try{ localStorage.setItem("aba", a); }catch(e){}
 }
@@ -265,7 +302,7 @@ function abrirAba(a){
 // ---------- login ----------
 function mostrarLogin(sim){
   $("#entrar").style.display = sim ? "" : "none";
-  if (sim) ["midias","prontos","ajustes"].forEach(x=>$("#aba-"+x).style.display="none");
+  if (sim) ["midias","entrevistas","prontos","ajustes"].forEach(x=>$("#aba-"+x).style.display="none");
   $("#abas").style.visibility = sim ? "hidden" : "visible";
 }
 $("#b-login").onclick = async ()=>{ await api("/api/login", {}); $("#login-erro").textContent="Abri uma aba do navegador para você escolher a conta. Depois de autorizar, volte para cá."; esperarLogin(); };
@@ -311,6 +348,65 @@ $("#b-enviar").onclick = async ()=>{
   ENVIANDO=false; desenharArqs(); atualizar();
 };
 
+// ---------- entrevistas: lista em ordem ----------
+let ENT = [], ENVIANDO_ENT = false;
+const soltaEnt = $("#solta-ent");
+soltaEnt.onclick = ()=> $("#arquivos-ent").click();
+$("#arquivos-ent").onchange = e => { adicionarEnt(e.target.files); e.target.value=""; };
+["dragenter","dragover"].forEach(ev=>soltaEnt.addEventListener(ev, e=>{e.preventDefault(); soltaEnt.classList.add("sobre");}));
+["dragleave","drop"].forEach(ev=>soltaEnt.addEventListener(ev, e=>{e.preventDefault(); soltaEnt.classList.remove("sobre");}));
+soltaEnt.addEventListener("drop", e=> adicionarEnt(e.dataTransfer.files));
+function adicionarEnt(lista){
+  let ignorados = 0;
+  for (const f of lista){
+    if (!ehVideo(f)){ ignorados++; continue; }
+    if (!ENT.find(a=>a.name===f.name && a.size===f.size)) ENT.push(f);
+  }
+  if (ignorados) toast("Só vídeos entram aqui. Ignorei "+ignorados+" arquivo(s).");
+  desenharEnt();
+}
+function moverEnt(i, pos){
+  const n = ENT.length; pos = Math.min(n, Math.max(1, parseInt(pos)||i+1)) - 1;
+  const [f] = ENT.splice(i, 1); ENT.splice(pos, 0, f); desenharEnt();
+}
+function tirarEnt(i){ ENT.splice(i, 1); desenharEnt(); }
+$("#b-limpar-ent").onclick = ()=>{ ENT=[]; desenharEnt(); };
+function desenharEnt(estados){
+  const n = ENT.length, off = ENVIANDO_ENT ? "disabled" : "";
+  $("#lista-ent").innerHTML = ENT.map((f,i)=>`<li>
+      <input class="pos" type="number" min="1" max="${n}" value="${i+1}" ${off} onchange="moverEnt(${i}, this.value)">
+      <span class="n" title="${esc(f.name)}">${esc(f.name)}</span>
+      <span class="t">${estados?estados[i]:tamanho(f.size)}</span>
+      <button class="mv" ${off} ${i===0?"disabled":""} onclick="moverEnt(${i}, ${i})" title="Subir">↑</button>
+      <button class="mv" ${off} ${i===n-1?"disabled":""} onclick="moverEnt(${i}, ${i+2})" title="Descer">↓</button>
+      <button class="mv" ${off} onclick="tirarEnt(${i})" title="Tirar da lista">✕</button></li>`).join("");
+  $("#dica-ent").style.display = n>1 ? "" : "none";
+  $("#b-enviar-ent").disabled = !n || ENVIANDO_ENT;
+  $("#b-limpar-ent").style.display = n && !ENVIANDO_ENT ? "" : "none";
+}
+$("#b-enviar-ent").onclick = async ()=>{
+  const nome = $("#nome-ent").value.trim();
+  if (!nome){ toast("Dê um nome ao vídeo."); $("#nome-ent").focus(); return; }
+  if (!ENT.length){ toast("Coloque pelo menos um vídeo."); return; }
+  ENVIANDO_ENT = true; desenharEnt();
+  try{
+    const {id} = await api("/api/novo", {nome, titulo:$("#titulo-ent").value, estilo:$("#estilo-ent").value, modo:"entrevista"});
+    const largura = Math.max(2, String(ENT.length).length);
+    const estados = ENT.map(()=> "aguardando");
+    for (let i=0;i<ENT.length;i++){
+      // o número no começo do nome é o que guarda a ordem escolhida
+      const nomeArq = String(i+1).padStart(largura,"0") + "_" + ENT[i].name;
+      await enviarArquivo(`/api/arquivo?id=${id}&nome=${encodeURIComponent(nomeArq)}`, ENT[i],
+        p=>{ estados[i] = "copiando "+Math.round(p*100)+"%"; desenharEnt(estados); });
+      estados[i] = "ok"; desenharEnt(estados);
+    }
+    await api("/api/concluir", {id});
+    ENT = []; $("#nome-ent").value=""; $("#titulo-ent").value="";
+    toast("Pronto! A edição já começou. Acompanhe em Andamento.");
+  }catch(e){ toast("Erro: "+e.message); }
+  ENVIANDO_ENT=false; desenharEnt(); atualizar();
+};
+
 // ---------- andamento ----------
 function linhaProj(p){
   let barra = "", texto = esc(p.etapa||""), botoes = "", cls = "", tempo = "";
@@ -344,7 +440,7 @@ function cardPrevia(p){
       <div>${p.tem.video ? `<video controls playsinline preload="metadata" src="${midia(p,'video')}"></video>` : ""}</div>
       <div>${p.tem.capa ? `<img loading="lazy" src="${midia(p,'capa')}&v=${p.segundos}">` : ""}</div></div>
     <div class="corpo"><div class="nome">${esc(p.nome)}</div>
-      <div class="detalhe">${p.duracao? p.duracao+" s de vídeo":""}${p.segundos? " · editado em "+minutos(p.segundos):""}${p.musica_nome? " · música: "+esc(p.musica_nome):" · sem música"}</div>
+      <div class="detalhe">${p.modo==="entrevista" ? "Entrevista · " : ""}${p.duracao? p.duracao+" s de vídeo":""}${p.segundos? " · editado em "+minutos(p.segundos):""}${p.musica_nome? " · música: "+esc(p.musica_nome):" · sem música"}</div>
       <div class="botoes"><button class="botao verde" onclick="acao('aprovar','${p.id}')">Aprovar</button>
       <button class="botao vermelho" onclick="reprovar('reprovar','${p.id}')">Reprovar</button>
       <button class="botao claro" onclick="excluir('${p.id}')">Excluir</button></div></div></div>`;
@@ -465,7 +561,9 @@ async function atualizar(){
   try{
     const {projetos} = await api("/api/projetos"); PROJ = projetos;
     const andamento = projetos.filter(p=>["recebendo","na_fila","editando","enviando","erro"].includes(p.estado));
-    $("#andamento").innerHTML = andamento.map(linhaProj).join("") || `<div class="vazio">Nada sendo editado agora.</div>`;
+    const vazio = `<div class="vazio">Nada sendo editado agora.</div>`;
+    $("#andamento").innerHTML = andamento.filter(p=>p.modo!=="entrevista").map(linhaProj).join("") || vazio;
+    $("#andamento-ent").innerHTML = andamento.filter(p=>p.modo==="entrevista").map(linhaProj).join("") || vazio;
     const previas = projetos.filter(p=>p.estado==="previa"), finais = projetos.filter(p=>p.estado==="pronto");
     const c1 = JSON.stringify(previas.map(p=>p.id+p.segundos));
     if (c1 !== chavePrevias){ $("#previas").innerHTML = previas.map(cardPrevia).join("") || `<div class="vazio">Nenhum vídeo esperando.</div>`; chavePrevias = c1; }
@@ -477,6 +575,7 @@ async function atualizar(){
 async function iniciar(){
   await atualizarEstado();
   $("#estilo").innerHTML = ESTADO.estilos.map(s=>`<option value="${s}">${rotulo(s)}</option>`).join("");
+  $("#estilo-ent").innerHTML = `<option value="nenhuma">Sem música</option>` + ESTADO.estilos.map(s=>`<option value="${s}">${rotulo(s)}</option>`).join("");
   $("#estilo-musica").innerHTML = ESTADO.estilos.slice(1).map(s=>`<option value="${s}">${rotulo(s)}</option>`).join("");
   if (!ESTADO.logado){ mostrarLogin(true); return; }
   mostrarLogin(false);

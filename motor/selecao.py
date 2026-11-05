@@ -46,9 +46,12 @@ def _pontua(texto, termos, inicio=True):
 def _trechos_de_fala(item, cfg):
     """Quebra a fala em trechos, cortando as pausas longas e hesitações soltas."""
     sel = cfg["selecao"]
+    pausa_max = sel["pausa_max_seg"]
+    if cfg.get("entrevista"):
+        pausa_max = max(pausa_max, 0.9)  # entrevista: respiros naturais ficam, só as pausas longas saem
     grupos, atual = [], []
     for p in item["palavras"]:
-        if atual and p["s"] - atual[-1]["e"] > sel["pausa_max_seg"]:
+        if atual and p["s"] - atual[-1]["e"] > pausa_max:
             grupos.append(atual)
             atual = []
         atual.append(p)
@@ -177,6 +180,8 @@ def e_fala(item, cfg):
     Conversa de fundo (pessoas falando longe, burburinho) costuma ter pouca fala
     no take e palavras com baixa certeza, então vira imagem do local (muda, só música).
     O nome do arquivo pode forçar: contendo 'local' vira imagem, contendo 'fala' vira fala."""
+    if cfg.get("entrevista"):
+        return True  # aba Entrevistas: todos os takes são fala
     sel = cfg["selecao"]
     nome = item["path"].stem.lower()
     if "local" in nome:
@@ -190,6 +195,20 @@ def e_fala(item, cfg):
             and item.get("confianca", 0.0) >= sel.get("fala_min_confianca", -0.9))
 
 
+def montar_entrevista(itens, cfg):
+    """Aba Entrevistas: todos os takes são fala e a ordem é exatamente a que a pessoa definiu
+    (os itens chegam na ordem dos nomes dos arquivos, que o app numera 01, 02, 03...).
+    Só tira pausas longas e hesitações soltas. Nada é descartado, embaralhado nem coberto por imagens.
+    Take em que o Whisper não achou palavras entra inteiro, porque a pessoa o colocou na lista."""
+    roteiro = []
+    for it in itens:
+        trechos = _trechos_de_fala(it, cfg)
+        if not trechos:
+            trechos = [{"ini": 0.0, "fim": it["duracao"], "palavras": []}]
+        roteiro.append({"tipo": "fala", "item": it, "trechos": trechos, "coberturas": []})
+    return roteiro, []
+
+
 def montar_roteiro(itens, cfg):
     """Estrutura baseada nos vídeos de referência:
       - sempre abre com a pessoa falando
@@ -198,6 +217,8 @@ def montar_roteiro(itens, cfg):
           narração: a voz continua sobre imagens do local (como no Dia de Campo)
       - a última fala fica com a pessoa na tela
       - fecha com a tela de encerramento (logo)"""
+    if cfg.get("entrevista"):
+        return montar_entrevista(itens, cfg)
     sel = cfg["selecao"]
     cob = cfg.get("cobertura", {})
     falas = [i for i in itens if e_fala(i, cfg)]
@@ -286,6 +307,8 @@ def completar_duracao(roteiro, itens, cfg):
     """Reels precisam de mais de 30 s. Se faltar tempo, acrescenta mais imagens
     do local nas montagens (sem repetir o mesmo trecho) e, se ainda faltar,
     alonga as imagens que já estão no vídeo."""
+    if cfg.get("entrevista"):
+        return 0  # não há imagens do local para completar; a duração é a das falas
     sel = cfg["selecao"]
     minimo = sel.get("duracao_min_final_seg", 30) + 1.0  # 1 s de folga pelas transições
     falta = minimo - duracao_conteudo(roteiro)

@@ -377,7 +377,7 @@ def editar_projeto(pid):
         atualizar(pid, estado="erro", erro="Nenhum vídeo neste projeto.")
         return
     musica = musica_projeto
-    if not musica:
+    if not musica and p.get("estilo") != "nenhuma":
         evitar = p.get("musicas_recusadas", [])
         musica = escolher_musica(p.get("estilo"), evitar)
     encerramento = encerramento_projeto
@@ -393,6 +393,8 @@ def editar_projeto(pid):
 
     try:
         cfg = config_edicao()
+        if p.get("modo") == "entrevista":
+            cfg["entrevista"] = True
         nome = nome_arquivo(p["nome"])
         r = editor.editar(nome, videos, trabalho, cfg, musica, encerramento, avisar,
                           logo=logo if logo.exists() else None, titulo=p.get("titulo") or None)
@@ -483,7 +485,7 @@ def visao(p):
     """O que a tela precisa de cada projeto."""
     v = {k: p.get(k) for k in ("id", "nome", "titulo", "estilo", "estado", "etapa", "pct", "atual", "total",
                                  "erro", "erro_drive", "duracao", "segundos", "drive_link", "criado",
-                                 "aprovado_em", "musica_nome", "n_takes")}
+                                 "aprovado_em", "musica_nome", "n_takes", "modo")}
     v["tem"] = {k: True for k in (p.get("arquivos") or {})}
     if p.get("estado") == "editando" and p.get("inicio_ts"):
         dec = time.time() - p["inicio_ts"]
@@ -695,7 +697,8 @@ class App(BaseHTTPRequestHandler):
                 pid = uuid.uuid4().hex[:12]
                 (dir_projeto(pid) / "takes").mkdir(parents=True)
                 p = {"id": pid, "nome": nome, "titulo": (d.get("titulo") or "").strip(),
-                     "estilo": d.get("estilo") or "automatico", "estado": "recebendo", "etapa": "Recebendo os vídeos",
+                     "estilo": d.get("estilo") or "automatico",
+                     "modo": "entrevista" if d.get("modo") == "entrevista" else "normal", "estado": "recebendo", "etapa": "Recebendo os vídeos",
                      "pct": 0, "criado": agora(), "criado_ts": time.time(), "n_takes": 0}
                 salvar_projeto(p)
                 return self._json({"id": pid})
