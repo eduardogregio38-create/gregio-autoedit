@@ -43,22 +43,28 @@ def _pontua(texto, termos, inicio=True):
     return pontos
 
 
-def tirar_recomecos(palavras, max_erro=12, janela_seg=6.0):
+def tirar_recomecos(palavras, max_erro=5, janela_seg=4.0):
     """Quando a pessoa erra e recomeça a frase no mesmo take ('a escola tem... a escola tem cursos'),
-    fica só a última versão. Marca a primeira palavra que sobrou com x=(início, fim) do trecho removido."""
+    fica só a última versão. Cuidado: na fala normal as mesmas palavras voltam ('a gente vai... a gente
+    também'), e isso NÃO é erro. Só tira quando o recomeço é bem claro:
+    - 3 palavras iguais repetidas logo em seguida (até 5 palavras no meio), ou
+    - 2 palavras iguais, coladas (até 2 palavras no meio) e com uma pausa de respiro antes do recomeço.
+    Marca a primeira palavra que sobrou com x=(início, fim) do trecho removido."""
     ps = [dict(p) for p in palavras]
     norm = [_limpa(p) for p in ps]
     i, saida = 0, []
     while i < len(ps):
         removido = None
-        for n in (3, 2):
+        for n, erro in ((3, max_erro), (2, 2)):
             if i + n > len(ps) or any(w in HESITACOES for w in norm[i:i + n]):
                 continue
             ref = norm[i:i + n]
-            for j in range(i + n, min(len(ps) - n + 1, i + n + max_erro + 1)):
+            for j in range(i + n, min(len(ps) - n + 1, i + n + erro + 1)):
                 if ps[j]["s"] - ps[i]["s"] > janela_seg:
                     break
                 if norm[j:j + n] == ref:
+                    if n == 2 and ps[j]["s"] - ps[j - 1]["e"] < 0.25:
+                        continue  # sem pausa: é só a pessoa falando normal
                     removido = j
                     break
             if removido:

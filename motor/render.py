@@ -448,7 +448,7 @@ def finalizar(video: Path, musica, srt, destino: Path, cfg, fim_musica=None, rea
         )
         if a["ducking"]:
             partes.append("[0:a]asplit=2[voz][chave]")
-            partes.append("[m][chave]sidechaincompress=threshold=0.02:ratio=10:attack=15:release=400[md]")
+            partes.append("[m][chave]sidechaincompress=threshold=0.02:ratio=8:attack=20:release=1200[md]")
             ult = "[voz][md]"
         else:
             ult = "[0:a][m]"

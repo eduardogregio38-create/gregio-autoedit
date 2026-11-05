@@ -100,3 +100,10 @@ Português do Brasil natural e simples, sem travessões e sem frases feitas. Exp
 Feito (código + testes no sandbox, sem vídeo real): C1 C2 C3 C4 C6 C7 C9, A1 A2 A3, M1 M2 M3 M4 M5 M6 M7, V4 V6 V8 V9, L1 L3 L5, K1 K2 K3 K4 K5 (+ capa por take/momento ou imagem própria), E1 E3 E4 E5, T1(parcial: trocar capa/música/legenda, sem linha do tempo de cenas) T2(parcial) T3 T4 T6, R1 R2 R3 R4 R5 R6(upload já retomava; login 401 volta à tela de login) R7 R8 R9, P5, U1 U2 U3 U5 U6 U7, N2 (termos.html novo).
 Não feito / depende do Eduardo: A4 e V1 (precisam de gravações reais), N1 (modelo de cobrança), N7 (Microsoft Store: conta de desenvolvedor), P4 (Dropbox/OneDrive: app key), U4 (inglês/espanhol), N6 (preços e vídeo de demonstração), U1 vídeo de exemplo, T1 linha do tempo completa, T2 mais motivos.
 Pontos de atenção: fontes divertidas são baixadas no build (build/preparar.py, URLs não verificadas); AJUDA_EMAIL em app/servidor.py; testes: testes/teste_cenarios.py (CI, continue-on-error).
+
+
+## v2.3.2
+- Regra de recomeços (tirar_recomecos) ficou conservadora: só tira repetição clara (3 palavras, ou 2 palavras coladas com pausa). Antes apagava trechos da fala normal.
+- Ducking da música: release 400 ms -> 1200 ms (música não sobe nas pausas curtas).
+- Pendente: fonte 'Made Out Sender' (Eduardo vai enviar o arquivo); layout novo do app na 2.4.
+- Achado: no vídeo IMG_3077 o Eduardo só cortou o começo (1,3 s) e manteve a fala contínua; app deve respeitar fala corrida.
