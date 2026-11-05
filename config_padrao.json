@@ -2,7 +2,7 @@
   "formato": "vertical",
   "enquadramento": "fundo_desfocado",
   "fps": 30,
-  "whisper_modelo": "base",
+  "whisper_modelo": "small",
   "idioma": "pt",
   "selecao": {
     "min_fala_seg": 1.5,
@@ -81,7 +81,7 @@
     "duracao_min_seg": 2.0,
     "duracao_max_seg": 4.0
   },
-  "whisper_beam": 1,
+  "whisper_beam": 5,
   "preset_x264": "veryfast",
   "crf": 20,
   "gerar_pacote": true,

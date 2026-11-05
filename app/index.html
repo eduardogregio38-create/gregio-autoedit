@@ -745,10 +745,16 @@ async function carregarAjustes(){
     <button class="mm" onclick="mudar('${k}', ${m.valor}-${m.passo})">−</button><div class="v">${m.valor}</div><button class="mm" onclick="mudar('${k}', ${m.valor}+${m.passo})">+</button></div>`).join("");
   $("#evitar").innerHTML = a.evitar.length ? a.evitar.map(m=>`<div class="ajuste"><div class="n">${esc(m)}</div><button class="botao claro pequeno" onclick='liberar(${JSON.stringify(m)})'>Voltar a usar</button></div>`).join("")
     : `<div class="vazio">Nenhuma. Quando você reprovar marcando "a música não combinou", ela aparece aqui.</div>`;
-  $("#historico").innerHTML = a.historico.length ? a.historico.map(h=>`<div class="hist"><div class="q">${esc(h.data)}${h.projeto? " · "+esc(h.projeto):""}${h.projeto? " · "+(h.aprovado?"aprovado":"reprovado"):""}</div>
-    ${h.motivos.length? "<div>Motivos: "+esc(h.motivos.join(", "))+"</div>":""}${h.nota && h.nota!=="Ajuste manual"? "<div>Obs.: "+esc(h.nota)+"</div>":""}
-    <div>${h.mudancas.length? "Mudou: "+esc(h.mudancas.join("; ")) : "Nenhum ajuste automático"}</div></div>`).join("")
-    : `<div class="vazio">Ainda nada. Cada aprovação e reprovação fica registrada aqui.</div>`;
+  const mudados = Object.values(a.ajustes).filter(m=>m.valor!==m.padrao);
+  const aprov = a.historico.filter(h=>h.projeto && h.aprovado).length, reprov = a.historico.filter(h=>h.projeto && !h.aprovado).length;
+  const itens = h=>`<div class="hist"><div class="q">${esc(h.data)}${h.projeto? " · "+esc(h.projeto):""}${h.projeto? " · "+(h.aprovado?"aprovado":"reprovado"):""}</div>
+    ${h.motivos.length? "<div>Motivos: "+esc(h.motivos.join(", "))+"</div>":""}${h.nota && h.nota!=="Ajuste manual"? "<div>Obs.: "+esc(h.nota)+"</div>":""}</div>`;
+  $("#historico").innerHTML = (aprov+reprov ? `<p class="sub" style="margin:0 0 8px">${aprov} vídeo(s) aprovado(s) e ${reprov} reprovado(s) até agora. O app vai se ajustando sozinho a cada resposta sua.</p>`
+      : `<div class="vazio">Ainda nada. Cada vídeo que você aprovar ou reprovar ensina o app.</div>`)
+    + (mudados.length ? `<div style="margin:6px 0 4px;font-weight:600">Como ele está agora (diferente do padrão):</div>` + mudados.map(m=>`<div>${esc(m.nome)}: <b>${m.valor}</b> <small>(padrão ${m.padrao})</small></div>`).join("")
+      : (aprov+reprov ? `<div>Os ajustes ainda estão no padrão.</div>` : ""))
+    + (a.evitar.length ? `<div style="margin-top:8px">Músicas que ele não usa mais: ${a.evitar.map(esc).join(", ")}.</div>` : "")
+    + (a.historico.filter(h=>h.projeto).length ? `<details style="margin-top:10px"><summary style="cursor:pointer">Ver os últimos vídeos</summary>${a.historico.filter(h=>h.projeto).slice(0,8).map(itens).join("")}</details>` : "");
   $("#logo-estado").innerHTML = a.logo ? `<img src="${comChave('/api/logo?v='+Date.now())}" style="max-height:60px;background:#333;padding:6px;border-radius:6px">` : "Sem logo: a capa sai só com o título.";
   $("#b-tirar-logo").style.display = a.logo ? "" : "none";
   $("#enc-estado").textContent = a.encerramento ? "Usando: "+a.encerramento : "Sem tela final.";

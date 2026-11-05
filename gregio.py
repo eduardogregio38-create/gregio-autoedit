@@ -21,9 +21,11 @@ def preparar():
     bin_dir = b / "bin"
     if bin_dir.exists():
         os.environ["PATH"] = str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
-    modelo = b / "modelos" / "whisper-base"
-    if modelo.exists():
-        os.environ.setdefault("AUTOEDIT_WHISPER", str(modelo))
+    for nome_modelo in ("whisper-small", "whisper-base"):  # o melhor que veio no instalador
+        modelo = b / "modelos" / nome_modelo
+        if (modelo / "model.bin").exists():
+            os.environ.setdefault("AUTOEDIT_WHISPER", str(modelo))
+            break
     rnn = b / "modelos" / "sh.rnnn"
     if rnn.exists():
         os.environ.setdefault("AUTOEDIT_RNNOISE", str(rnn))

@@ -52,10 +52,14 @@ for prog in ("ffmpeg", "ffprobe"):
     if not exe.exists():
         sys.exit("faltou " + exe.name)
 
-# modelo de voz (Whisper base, ~140 MB)
+# modelo de voz: Whisper "small" (~480 MB, entende bem mais que o "base"); se falhar, usa o "base" (~140 MB)
 from huggingface_hub import snapshot_download
-snapshot_download("Systran/faster-whisper-base", local_dir=str(MOD / "whisper-base"),
-                  allow_patterns=["config.json", "model.bin", "tokenizer.json", "vocabulary.*", "preprocessor_config.json"])
+_padroes = ["config.json", "model.bin", "tokenizer.json", "vocabulary.*", "preprocessor_config.json"]
+try:
+    snapshot_download("Systran/faster-whisper-small", local_dir=str(MOD / "whisper-small"), allow_patterns=_padroes)
+except Exception as e:
+    print("sem o modelo small, usando o base:", e)
+    snapshot_download("Systran/faster-whisper-base", local_dir=str(MOD / "whisper-base"), allow_patterns=_padroes)
 # redução de ruído da voz
 try:
     (MOD / "sh.rnnn").write_bytes(baixar(

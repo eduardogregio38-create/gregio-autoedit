@@ -36,7 +36,7 @@ function caminhoBackend() {
 
 function iniciarBackend() {
   const exe = caminhoBackend();
-  const env = Object.assign({}, process.env, { GREGIO_PORTA: String(porta), GREGIO_TOKEN: CHAVE });
+  const env = Object.assign({}, process.env, { GREGIO_PORTA: String(porta), GREGIO_TOKEN: CHAVE, GREGIO_VERSAO: app.getVersion() });
   if (!app.isPackaged && !fs.existsSync(exe)) {
     // desenvolvimento: roda o Python direto
     backend = spawn(process.env.PYTHON || "python3", [path.join(__dirname, "..", "gregio.py"), "--sem-navegador"], { env });

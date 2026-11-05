@@ -52,10 +52,11 @@ def transcrever(path: Path, cfg, cache_dir: Path):
     """Retorna lista de palavras [{w, s, e, p}] e média de confiança.
     O resultado fica em cache (JSON) para não transcrever duas vezes."""
     vocab = [v.strip() for v in cfg.get("vocabulario", []) if v and v.strip()]
-    sufixo = ""
-    if vocab:
-        import hashlib
-        sufixo = "." + hashlib.md5("|".join(vocab).encode("utf-8")).hexdigest()[:6]
+    import hashlib
+    import os
+    modelo_id = os.path.basename(os.environ.get("AUTOEDIT_WHISPER") or cfg["whisper_modelo"])
+    # o cache vale só para o mesmo vocabulário E o mesmo modelo de voz (trocar de modelo refaz a transcrição)
+    sufixo = "." + hashlib.md5(("|".join(vocab) + "#" + modelo_id).encode("utf-8")).hexdigest()[:6]
     cache = cache_dir / (path.stem + sufixo + ".transcricao.json")
     if cache.exists():
         return json.loads(cache.read_text(encoding="utf-8"))

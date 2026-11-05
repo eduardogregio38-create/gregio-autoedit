@@ -112,3 +112,10 @@ Pontos de atenção: fontes divertidas são baixadas no build (build/preparar.py
 ## v2.4.0
 - Capa no estilo caixa (Canva): caixa de cor lisa, etiqueta opcional com qualquer texto, título, logo da pessoa dentro da caixa. Sem nada da Faculdade UNIGUAÇU. Painel com prévia ao vivo (/api/capa_teste).
 - Pendente: fonte Made Out Sender (aguardando arquivo); editor estilo CapCut (2.5); novo layout.
+
+
+## v2.4.1
+- Achado no relatório do Fabio Corbari: tirar_recomecos apagava 'durante o semestre,' (agora corrigido na 2.3.2).
+- Whisper base errava muito (legenda com erros). Agora: modelo small embutido (build/preparar.py baixa Systran/faster-whisper-small; fallback base), beam 5, cache de transcrição separado por modelo.
+- VERSAO do servidor vem do Electron (GREGIO_VERSAO). Log sem ConnectionResetError.
+- Para a 2.5: legenda por frase, estilos prontos, linha do tempo (só visual), desfazer/refazer, dividir/juntar frases, salvar estilo, arrastar legenda, atalhos; capas: mais modelos, paletas do logo, subtítulo, prévia da grade; checagem automática pós-edição.

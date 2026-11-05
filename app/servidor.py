@@ -37,7 +37,7 @@ sys.path.insert(0, str(RAIZ / "motor"))
 import gdrive  # noqa: E402
 
 NOME_APP = "Gregio AutoEdit"
-VERSAO = "2.0"
+VERSAO = os.environ.get("GREGIO_VERSAO") or "2.0"
 AJUDA_EMAIL = "eduardogregio38@gmail.com"   # (não usado mais no botão; fica de reserva)
 AJUDA_WHATSAPP = "5545988280533"             # contato do botão "Preciso de ajuda"
 AJUDA_WHATSAPP_TXT = "+55 45 98828-0533"
@@ -1465,7 +1465,13 @@ def main(abrir=True):
     import capa
     capa.PASTAS_FONTES.append(str(PASTA / "Fontes"))
     try:
-        srv = ThreadingHTTPServer(("127.0.0.1", PORTA), App)
+        class Servidor(ThreadingHTTPServer):
+            def handle_error(self, request, client_address):  # o navegador fecha conexões o tempo todo: não é erro
+                import sys as _s
+                if isinstance(_s.exc_info()[1], (ConnectionResetError, BrokenPipeError, ConnectionAbortedError)):
+                    return
+                super().handle_error(request, client_address)
+        srv = Servidor(("127.0.0.1", PORTA), App)
     except OSError:
         print("O app já está aberto em outra janela.")
         return
