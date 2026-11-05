@@ -17,20 +17,52 @@
   "build": {
     "appId": "com.gregio.autoedit",
     "productName": "Gregio AutoEdit",
-    "directories": { "output": "../release" },
-    "files": ["main.js", "carregando.html", "icon.png"],
-    "extraResources": [{ "from": "../dist/backend", "to": "backend" }],
+    "directories": {
+      "output": "../release"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "atualizador.js",
+      "carregando.html",
+      "icon.png"
+    ],
+    "extraResources": [
+      {
+        "from": "../dist/backend",
+        "to": "backend"
+      }
+    ],
     "artifactName": "Gregio-AutoEdit-${os}-${arch}.${ext}",
     "mac": {
-      "target": [{ "target": "dmg" }],
+      "target": [
+        {
+          "target": "dmg"
+        },
+        {
+          "target": "zip"
+        }
+      ],
       "icon": "icon.icns",
       "category": "public.app-category.video",
       "identity": "-",
       "hardenedRuntime": false,
       "gatekeeperAssess": false
     },
-    "dmg": { "title": "Gregio AutoEdit" },
-    "win": { "target": [{ "target": "nsis", "arch": ["x64"] }], "icon": "icon.ico" },
+    "dmg": {
+      "title": "Gregio AutoEdit"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "icon.ico"
+    },
     "nsis": {
       "oneClick": false,
       "perMachine": false,

@@ -104,6 +104,11 @@ a{color:var(--acento)}
   <div class="conta" id="conta"></div>
 </header>
 
+<div id="atualizacao" style="display:none;background:var(--acento);color:#fff;padding:10px 28px;font-size:14px;display:none;align-items:center;gap:14px;flex-wrap:wrap">
+  <span id="at-texto"></span>
+  <button class="botao pequeno" id="at-botao" style="background:#fff;color:var(--acento)">Atualizar agora</button>
+  <div class="barra" id="at-barra" style="display:none;flex:1;min-width:160px;background:rgba(255,255,255,.3);margin:0"><div style="width:0%;background:#fff"></div></div>
+</div>
 <main>
   <section id="entrar" style="display:none" class="cartao">
     <div class="marca"><b>GREGIO</b><span>AutoEdit</span><i></i></div>
@@ -199,6 +204,12 @@ a{color:var(--acento)}
     <div class="cartao"><h3>Pasta no Google Drive</h3>
       <p class="sub" id="destino-atual"></p>
       <div class="botoes" style="margin-top:0"><button class="botao claro pequeno" onclick="escolherPasta()">Trocar a pasta</button></div>
+    </div>
+
+    <div class="cartao" id="cartao-versao" style="display:none"><h3>Versão do app</h3>
+      <p class="sub" id="versao-texto"></p>
+      <div class="botoes" style="margin-top:0"><button class="botao claro pequeno" onclick="procurarAtualizacao(true)">Procurar atualização</button></div>
+      <p class="sub" style="margin-top:10px;font-size:13px">Atualizar não apaga nada: seus vídeos, músicas, ajustes e o login ficam guardados.</p>
     </div>
 
     <div class="cartao"><h3>O que o app aprendeu</h3><div id="historico"></div></div>
@@ -421,6 +432,26 @@ window.escolherPasta = async ()=>{
 window.usarRaiz = async ()=>{ try{ await api("/api/destino", {id:null, nome:"Meu Drive"}); toast("Pronto! A pasta Gregio AutoEdit está na raiz do seu Drive."); }catch(e){ toast("Erro: "+e.message); } atualizarEstado(); };
 setInterval(()=>{ if (!document.hidden && ESTADO.logado && !ESTADO.destino) atualizarEstado(); }, 4000);
 
+// ---------- atualização do app (só existe dentro do app instalado) ----------
+async function procurarAtualizacao(manual){
+  if (!window.gregioApp) return;
+  const v = await gregioApp.verificar();
+  $("#cartao-versao").style.display = "";
+  $("#versao-texto").textContent = "Você está na versão " + v.atual + "." + (v.tem ? " A versão " + v.nova + " já está disponível." : (v.erro ? " (não consegui conferir agora)" : " É a mais nova."));
+  if (v.tem){
+    $("#atualizacao").style.display = "flex";
+    $("#at-texto").textContent = "Versão nova do Gregio AutoEdit (" + v.nova + ") disponível.";
+  } else if (manual) toast(v.erro ? "Não consegui conferir agora. Veja a internet e tente de novo." : "Você já está na versão mais nova.");
+}
+$("#at-botao").onclick = async ()=>{
+  if (PROJ.some(p=>p.estado==="editando") && !confirm("Tem um vídeo sendo editado. Ele recomeça sozinho quando o app abrir de novo. Atualizar agora?")) return;
+  $("#at-botao").disabled = true; $("#at-barra").style.display = "";
+  $("#at-texto").textContent = "Baixando a atualização...";
+  gregioApp.aoProgresso(p=>{ $("#at-barra>div").style.width = Math.round(p*100)+"%"; if (p>=1) $("#at-texto").textContent = "Instalando. O app vai fechar e abrir de novo sozinho."; });
+  const r = await gregioApp.atualizar();
+  if (!r.ok){ $("#at-texto").textContent = "Não deu certo: " + r.erro; $("#at-botao").disabled = false; }
+};
+
 // ---------- atualização ----------
 let chavePrevias = "", chaveFinais = "";
 async function atualizarEstado(){
@@ -452,7 +483,8 @@ async function iniciar(){
   let aba = "midias"; try{ aba = localStorage.getItem("aba") || "midias"; }catch(e){}
   abrirAba(aba);
   atualizar();
-  if (!window._timer) window._timer = setInterval(()=>{ if (!document.hidden) atualizar(); }, 2000);
+  if (!window._timer){ window._timer = setInterval(()=>{ if (!document.hidden) atualizar(); }, 2000);
+    procurarAtualizacao(false); setInterval(()=>procurarAtualizacao(false), 6*3600*1000); }
 }
 iniciar();
 </script>

@@ -1,6 +1,7 @@
 // Gregio AutoEdit: janela do app (Electron). O motor de edição roda num processo
 // separado (backend em Python empacotado) e a janela conversa com ele em 127.0.0.1.
-const { app, BrowserWindow, shell, dialog, Menu } = require("electron");
+const { app, BrowserWindow, shell, dialog, Menu, ipcMain } = require("electron");
+const atualizador = require("./atualizador");
 const { spawn } = require("child_process");
 const path = require("path");
 const net = require("net");
@@ -64,7 +65,7 @@ async function criarJanela() {
     width: 1240, height: 860, minWidth: 900, minHeight: 640,
     title: "Gregio AutoEdit", backgroundColor: "#0e0e12", show: false,
     icon: path.join(__dirname, "icon.png"),
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true }
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, "preload.js") }
   });
   janela.once("ready-to-show", () => janela.show());
   // permissões do navegador (câmera, microfone, localização...) ficam todas bloqueadas
@@ -95,6 +96,24 @@ function menu() {
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(modelo));
 }
+
+// ---------- atualização ----------
+let ultimaVerificacao = null;
+ipcMain.handle("versao", () => app.getVersion());
+ipcMain.handle("verificar-atualizacao", async () => {
+  try { ultimaVerificacao = await atualizador.verificar(); return ultimaVerificacao; }
+  catch (e) { return { atual: app.getVersion(), tem: false, erro: e.message }; }
+});
+ipcMain.handle("instalar-atualizacao", async () => {
+  const info = ultimaVerificacao || await atualizador.verificar();
+  if (!info.tem) return { ok: false, erro: "Você já está na versão mais nova." };
+  try {
+    await atualizador.instalar(info,
+      p => { if (janela) janela.webContents.send("progresso-atualizacao", p); },
+      () => { saindo = true; setTimeout(() => app.quit(), 300); });
+    return { ok: true };
+  } catch (e) { return { ok: false, erro: e.message }; }
+});
 
 app.whenReady().then(async () => {
   menu();

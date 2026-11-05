@@ -94,12 +94,14 @@ jobs:
         shell: bash
         run: |
           npm install --no-audit --no-fund
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version; fi
           npx electron-builder ${{ matrix.eb }} --publish never
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.nome }}
           path: |
             release/*.dmg
+            release/*.zip
             release/*.exe
             resultado/*.mp4
             resultado/*.jpg
@@ -126,5 +128,7 @@ jobs:
             - Windows: Gregio-AutoEdit-Windows-Instalador.exe
           files: |
             Mac-Intel/release/*.dmg
+            Mac-Intel/release/*.zip
             Mac-AppleSilicon/release/*.dmg
+            Mac-AppleSilicon/release/*.zip
             Windows/release/*.exe
