@@ -21,7 +21,7 @@
     "duracao_min_final_seg": 30
   },
   "audio": {
-    "reducao_ruido": "rnnoise",
+    "reducao_ruido": "fft",
     "som_ambiente_takes_local_db": -99,
     "volume_musica_db": -16,
     "ducking": true,
