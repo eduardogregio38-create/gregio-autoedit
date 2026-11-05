@@ -98,6 +98,9 @@
     "fonte": "Poppins-Bold.ttf",
     "posicao": "baixo",
     "cor": "#FFFFFF",
+    "cor_caixa": "#F1F1F1",
+    "tag": "",
+    "cor_tag": "#E63843",
     "margem_segura": true
   },
   "duracao_max_take_seg": 1800

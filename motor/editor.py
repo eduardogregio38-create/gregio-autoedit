@@ -234,7 +234,8 @@ def renderizar(nome, itens, roteiro, transicoes, descartados, musica, trabalho: 
             dest = trabalho / (f"CAPA - {nome}.jpg" if i == 0 else f"CAPA - {nome} ({i + 1}).jpg")
             capa.gerar(foto, nome, dest, rosto, titulo=titulo, logo=logo, estilo=cp.get("estilo", "classico"),
                        fonte=cp.get("fonte", "Poppins-Bold.ttf"), posicao=cp.get("posicao", "baixo"),
-                       cor=cp.get("cor", "#FFFFFF"), margem_segura=cp.get("margem_segura", True))
+                       cor=cp.get("cor", "#FFFFFF"), margem_segura=cp.get("margem_segura", True),
+                       cor_caixa=cp.get("cor_caixa", "#F1F1F1"), tag=cp.get("tag", ""), cor_tag=cp.get("cor_tag", "#E63843"))
             capas.append(dest)
             capas_info.append({"foto": str(foto), "rosto": [int(v) for v in rosto] if rosto is not None else None})
         arq_capa = capas[0] if capas else None

@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 BASE = Path(__file__).resolve().parent.parent
 FONTES = BASE / "assets" / "fonts"
@@ -187,17 +187,92 @@ def _sombra(altura):
     return Image.fromarray(camada, "RGBA")
 
 
-ESTILOS_CAPA = ("classico", "faixa", "cor")
+ESTILOS_CAPA = ("classico", "faixa", "cor", "caixa")
+
+
+def _contraste(hexa):
+    """Preto ou branco, o que ler melhor em cima da cor dada."""
+    h = hexa.lstrip("#")
+    if len(h) != 6:
+        return "#FFFFFF"
+    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+    return "#111111" if (0.299 * r + 0.587 * g + 0.114 * b) > 150 else "#FFFFFF"
+
+
+def _caixa(base, texto, fonte, cor_titulo, cor_caixa, tag, cor_tag, logo, posicao, rosto, margem_segura):
+    """Estilo caixa: retângulo arredondado de cor lisa com etiqueta (tag) no topo, título e logo opcional embaixo."""
+    if cor_titulo.upper() == "#FFFFFF" and _contraste(cor_caixa) == "#111111":
+        cor_titulo = "#004B96"  # título branco em caixa clara não aparece: usa azul
+    draw = ImageDraw.Draw(base)
+    cx_larg = 780
+    miolo = cx_larg - 110
+    tam = 84
+    while True:
+        f = _fonte(fonte, tam)
+        linhas = _quebrar(texto, f, miolo, draw)
+        if len(linhas) <= 3 or tam <= 48:
+            break
+        tam -= 4
+    linhas = linhas[:3]
+    alt_linha = int(tam * 1.15)
+    bloco = alt_linha * len(linhas)
+
+    ft = _fonte(fonte, 38)
+    tag = (tag or "").strip().upper()[:26]
+    tag_alt = 70 if tag else 0
+    lg = None
+    lh = 0
+    if logo and Path(logo).exists():
+        lg = Image.open(logo).convert("RGBA")
+        lw = 300
+        lh = int(lw * lg.height / lg.width)
+        if lh > 110:
+            lh, lw = 110, int(110 * lg.width / lg.height)
+        lg = lg.resize((lw, lh), Image.LANCZOS)
+    topo_pad = (tag_alt // 2 + 36) if tag else 54
+    alt = topo_pad + bloco + (36 + lh if lg else 0) + 54
+    centro = {"baixo": 1290, "meio": 960, "cima": 640}.get(posicao, 1290)
+    y0 = centro - alt // 2
+    if rosto is not None and posicao == "baixo":
+        _, ry, _, rh = rosto
+        if ry + rh > y0 - 20:
+            y0 = max(300, ry - alt - 60) if ry - alt - 60 > 300 else min(H - alt - 260, ry + rh + 40)
+    y0 = max(300, min(y0, 1640 - alt)) if margem_segura else max(120, min(y0, H - alt - 160))
+    x0 = (W - cx_larg) // 2
+
+    sombra = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    ImageDraw.Draw(sombra).rounded_rectangle((x0, y0 + 10, x0 + cx_larg, y0 + alt + 10), radius=46, fill=(0, 0, 0, 90))
+    base.alpha_composite(sombra.filter(ImageFilter.GaussianBlur(14)))
+    draw = ImageDraw.Draw(base)
+    draw.rounded_rectangle((x0, y0, x0 + cx_larg, y0 + alt), radius=46, fill=cor_caixa)
+
+    if tag:
+        tw = int(draw.textlength(tag, font=ft)) + 76
+        tx0 = (W - tw) // 2
+        draw.rounded_rectangle((tx0, y0 - tag_alt // 2, tx0 + tw, y0 + tag_alt // 2), radius=tag_alt // 2, fill=cor_tag)
+        draw.text((W / 2, y0), tag, font=ft, fill=_contraste(cor_tag), anchor="mm")
+    y = y0 + topo_pad
+    for ln in linhas:
+        draw.text((W / 2, y), ln, font=f, fill=cor_titulo, anchor="ma")
+        y += alt_linha
+    if lg is not None:
+        base.alpha_composite(lg, ((W - lg.width) // 2, y + 36 - 8))
+    return linhas
 
 
 def gerar(foto: Path, nome_projeto: str, destino: Path, rosto=None, titulo=None, logo=None, cor="#FFFFFF",
-          estilo="classico", fonte="Poppins-Bold.ttf", posicao="baixo", margem_segura=True):
+          estilo="classico", fonte="Poppins-Bold.ttf", posicao="baixo", margem_segura=True,
+          cor_caixa="#F1F1F1", tag="", cor_tag="#E63843"):
     """Estilos: classico (sombra), faixa (barra escura atrás do título), cor (letras na cor escolhida).
     Posição: baixo, meio ou cima. Com margem_segura o título fica dentro do recorte 3:4 da grade do perfil
     (faixa de 240 a 1680) e longe dos botões do Reels."""
     texto = (titulo or titulo_da_pasta(nome_projeto)).strip().upper()
     base = Image.open(foto).convert("RGBA").resize((W, H), Image.LANCZOS)
     draw = ImageDraw.Draw(base)
+    if estilo == "caixa":
+        linhas = _caixa(base, texto, fonte, cor, cor_caixa, tag, cor_tag, logo, posicao, rosto, margem_segura)
+        base.convert("RGB").save(destino, quality=95)
+        return destino, {"titulo": " / ".join(linhas)}
     largura_max = 820 if margem_segura else 940
 
     tam = 92

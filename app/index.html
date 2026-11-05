@@ -369,12 +369,19 @@ a{color:var(--acento)}
     <button class="botao claro pequeno" id="capa-img-btn">Escolher imagem</button>
     <input type="file" id="capa-img-arq" accept="image/png,image/jpeg" style="display:none">
     <img id="capa-img-prev" style="width:46%;max-width:240px;border-radius:10px;margin:10px 0;display:none"></div>
-  <div class="linha" style="margin-top:12px">
+  <div style="display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap"><div style="flex:1;min-width:290px"><div class="linha" style="margin-top:12px">
     <div style="flex:2"><label>Título da capa</label><input type="text" id="capa-titulo"></div>
-    <div><label>Estilo</label><select id="capa-estilo"><option value="classico">Clássico</option><option value="faixa">Faixa escura</option><option value="cor">Letras coloridas</option></select></div>
+    <div><label>Estilo</label><select id="capa-estilo"><option value="caixa">Caixa de cor</option><option value="classico">Clássico</option><option value="faixa">Faixa escura</option><option value="cor">Letras coloridas</option></select></div>
     <div><label>Posição</label><select id="capa-pos"><option value="baixo">Embaixo</option><option value="meio">No meio</option><option value="cima">Em cima</option></select></div>
     <div><label>Fonte</label><select id="capa-fonte"></select></div>
     <div style="flex:0 0 70px;min-width:70px"><label>Cor</label><input type="color" id="capa-cor" value="#ffffff" style="width:100%;height:42px;border:1px solid var(--linha);border-radius:9px;background:none;padding:2px"></div></div>
+  <div class="linha" id="capa-caixa-ctl">
+    <div style="flex:2"><label>Etiqueta no topo da caixa (deixe vazio para não ter)</label><input type="text" id="capa-tag" maxlength="26" placeholder="Ex.: DICA, NOVIDADE, BASTIDORES"></div>
+    <div style="flex:0 0 90px;min-width:90px"><label>Cor da caixa</label><input type="color" id="capa-cor-caixa" value="#f1f1f1" style="width:100%;height:42px;border:1px solid var(--linha);border-radius:9px;background:none;padding:2px"></div>
+    <div style="flex:0 0 90px;min-width:90px"><label>Cor da etiqueta</label><input type="color" id="capa-cor-tag" value="#e63843" style="width:100%;height:42px;border:1px solid var(--linha);border-radius:9px;background:none;padding:2px"></div></div>
+  </div><div style="text-align:center;margin:12px 0;flex:0 0 210px"><div class="sub" style="margin-bottom:6px">Prévia da capa (muda enquanto você edita)</div>
+    <img id="capa-previa" style="width:100%;max-width:210px;border-radius:12px;background:#000;display:none"></div>
+</div>
   <div class="botoes"><button class="botao" id="capa-ok">Usar esta capa</button><button class="botao claro" id="capa-fechar">Fechar</button></div>
 </div></div>
 
@@ -838,7 +845,7 @@ async function iniciar(){
   $("#estilo-musica").innerHTML = ESTADO.estilos.slice(1).map(s=>`<option value="${s}">${rotulo(s)}</option>`).join("");
   if (!ESTADO.logado){ mostrarLogin(true); return; }
   mostrarLogin(false);
-  try{ if (!localStorage.getItem("tut_ok")) iniciarTutorial(); }catch(e){}
+  if (ESTADO.tutorial_auto){ iniciarTutorial(); api("/api/tutorial", {acao:"aberto"}).catch(()=>{}); }
   let aba = "midias"; try{ aba = localStorage.getItem("aba") || "midias"; }catch(e){}
   abrirAba(aba);
   atualizar();
@@ -851,11 +858,11 @@ const CAPA = {id:null, aba:"opcoes", n:1, take:null, tempo:0, imagem:false, time
 async function abrirCapa(id){
   const p = PROJ.find(x=>x.id===id); if (!p) return;
   Object.assign(CAPA, {id, aba:"opcoes", n:1, imagem:false});
-  $("#capa-titulo").value = p.titulo || p.nome; $("#capa-estilo").value = "classico"; $("#capa-pos").value = "baixo";
+  $("#capa-titulo").value = p.titulo || p.nome; $("#capa-estilo").value = "caixa"; $("#capa-pos").value = "baixo"; $("#capa-cor").value = "#004b96"; $("#capa-tag").value = ""; $("#capa-cor-caixa").value = "#f1f1f1"; $("#capa-cor-tag").value = "#e63843";
   $("#capa-fotos").innerHTML = Array.from({length:p.n_capas||0},(_, i)=>`<div><img data-n="${i+1}" class="${i===0?"sel":""}" src="${comChave(`/api/capa_previa?id=${id}&n=${i+1}`)}"></div>`).join("") || `<div class="vazio">Sem sugestões neste vídeo. Use as outras abas.</div>`;
-  document.querySelectorAll("#capa-fotos img").forEach(im=>im.onclick=()=>{ CAPA.n = +im.dataset.n; document.querySelectorAll("#capa-fotos img").forEach(x=>x.classList.toggle("sel", x===im)); });
+  document.querySelectorAll("#capa-fotos img").forEach(im=>im.onclick=()=>{ CAPA.n = +im.dataset.n; document.querySelectorAll("#capa-fotos img").forEach(x=>x.classList.toggle("sel", x===im)); capaPrevia(); });
   try{ const r = await api("/api/preferencias"); $("#capa-fonte").innerHTML = r.fontes.map(f=>`<option value="${esc(f[0])}">${esc(f[1])}</option>`).join(""); }catch(e){}
-  capaAba("opcoes"); $("#modal-capa").style.display = "flex";
+  capaAba("opcoes"); $("#modal-capa").style.display = "flex"; capaMostrarCtl(); capaPrevia();
   try{ const {takes} = await api("/api/takes?id="+id); CAPA.takes = takes;
     $("#capa-take-sel").innerHTML = takes.map(t=>`<option value="${esc(t.nome)}">${esc(t.nome)} (${fmtTempo(t.duracao)})</option>`).join(""); capaTake(); }catch(e){}
 }
@@ -876,15 +883,40 @@ $("#capa-img-btn").onclick = ()=> $("#capa-img-arq").click();
 $("#capa-img-arq").onchange = async e=>{
   const f = e.target.files[0]; e.target.value=""; if (!f) return;
   try{ await enviarArquivo(`/api/capa_imagem?id=${CAPA.id}`, f); CAPA.imagem = true;
-    const im = $("#capa-img-prev"); im.src = URL.createObjectURL(f); im.style.display = ""; }
+    const im = $("#capa-img-prev"); im.src = URL.createObjectURL(f); im.style.display = ""; capaPrevia(); }
   catch(er){ toast("Erro: "+er.message); }
 };
+function capaCorpo(){
+  const corpo = {id:CAPA.id, titulo:$("#capa-titulo").value, estilo:$("#capa-estilo").value, posicao:$("#capa-pos").value, fonte:$("#capa-fonte").value, cor:$("#capa-cor").value,
+    cor_caixa:$("#capa-cor-caixa").value, tag:$("#capa-tag").value, cor_tag:$("#capa-cor-tag").value};
+  if (CAPA.aba==="opcoes") Object.assign(corpo, {origem:"opcao", n:CAPA.n});
+  else if (CAPA.aba==="take") Object.assign(corpo, {origem:"take", take:CAPA.take || $("#capa-take-sel").value, tempo:CAPA.tempo});
+  else { if (!CAPA.imagem) return null; Object.assign(corpo, {origem:"imagem"}); }
+  return corpo;
+}
+function capaMostrarCtl(){ $("#capa-caixa-ctl").style.display = $("#capa-estilo").value==="caixa" ? "" : "none"; }
+function capaPrevia(){
+  clearTimeout(CAPA.tp);
+  CAPA.tp = setTimeout(async ()=>{
+    const corpo = capaCorpo(); const im = $("#capa-previa");
+    if (!corpo || !CAPA.id){ im.style.display = "none"; return; }
+    const meu = CAPA.prevN = (CAPA.prevN||0)+1;
+    try{
+      const r = await fetch("/api/capa_teste", {method:"POST", headers:{"Content-Type":"application/json","X-Gregio-Chave":CHAVE}, body:JSON.stringify(corpo)});
+      if (!r.ok || meu!==CAPA.prevN) return;
+      const url = URL.createObjectURL(await r.blob()); if (im.dataset.u) URL.revokeObjectURL(im.dataset.u); im.dataset.u = url; im.src = url; im.style.display = "";
+    }catch(e){}
+  }, 350);
+}
+$("#capa-estilo").addEventListener("change", ()=>{
+  const c = $("#capa-cor"); const caixa = $("#capa-estilo").value==="caixa";
+  if (caixa && c.value.toLowerCase()==="#ffffff") c.value = "#004b96"; else if (!caixa && c.value.toLowerCase()==="#004b96") c.value = "#ffffff";
+  capaMostrarCtl(); });
+["capa-titulo","capa-estilo","capa-pos","capa-fonte","capa-cor","capa-tag","capa-cor-caixa","capa-cor-tag","capa-tempo","capa-take-sel"].forEach(i=>{ $("#"+i).addEventListener("input", capaPrevia); $("#"+i).addEventListener("change", capaPrevia); });
+document.querySelectorAll("#capa-abas button").forEach(b=>b.addEventListener("click", capaPrevia));
 $("#capa-fechar").onclick = ()=> $("#modal-capa").style.display = "none";
 $("#capa-ok").onclick = async ()=>{
-  const corpo = {id:CAPA.id, titulo:$("#capa-titulo").value, estilo:$("#capa-estilo").value, posicao:$("#capa-pos").value, fonte:$("#capa-fonte").value, cor:$("#capa-cor").value};
-  if (CAPA.aba==="opcoes") Object.assign(corpo, {origem:"opcao", n:CAPA.n});
-  else if (CAPA.aba==="take") Object.assign(corpo, {origem:"take", take:CAPA.take, tempo:CAPA.tempo});
-  else { if (!CAPA.imagem) return toast("Escolha uma imagem primeiro."); Object.assign(corpo, {origem:"imagem"}); }
+  const corpo = capaCorpo(); if (!corpo) return toast("Escolha uma imagem primeiro.");
   $("#capa-ok").disabled = true;
   try{ await api("/api/capa", corpo); toast("Capa atualizada."); $("#modal-capa").style.display = "none"; chavePrevias=""; atualizar(); }
   catch(e){ toast("Erro: "+e.message); }
@@ -973,7 +1005,7 @@ function iniciarTutorial(){ TUTI = 0; desenharTut(); $("#modal-tutorial").style.
 function desenharTut(){ const [t,d] = TUT[TUTI]; $("#tut-corpo").innerHTML = `<h2>${esc(t)}</h2><p class="sub" style="font-size:15px">${esc(d)}</p><p class="sub">${TUTI+1} de ${TUT.length}</p>`; $("#tut-prox").textContent = TUTI===TUT.length-1 ? "Começar" : "Próximo"; }
 $("#tut-prox").onclick = ()=>{ if (TUTI<TUT.length-1){ TUTI++; desenharTut(); } else fecharTut(); };
 $("#tut-pula").onclick = fecharTut;
-function fecharTut(){ $("#modal-tutorial").style.display = "none"; try{ localStorage.setItem("tut_ok","1"); }catch(e){} }
+function fecharTut(){ $("#modal-tutorial").style.display = "none"; api("/api/tutorial", {acao:"fechado"}).catch(()=>{}); }
 
 // ---------- tema ----------
 $("#b-tema").onclick = ()=>{

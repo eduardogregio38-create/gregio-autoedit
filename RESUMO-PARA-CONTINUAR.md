@@ -107,3 +107,8 @@ Pontos de atenção: fontes divertidas são baixadas no build (build/preparar.py
 - Ducking da música: release 400 ms -> 1200 ms (música não sobe nas pausas curtas).
 - Pendente: fonte 'Made Out Sender' (Eduardo vai enviar o arquivo); layout novo do app na 2.4.
 - Achado: no vídeo IMG_3077 o Eduardo só cortou o começo (1,3 s) e manteve a fala contínua; app deve respeitar fala corrida.
+
+
+## v2.4.0
+- Capa no estilo caixa (Canva): caixa de cor lisa, etiqueta opcional com qualquer texto, título, logo da pessoa dentro da caixa. Sem nada da Faculdade UNIGUAÇU. Painel com prévia ao vivo (/api/capa_teste).
+- Pendente: fonte Made Out Sender (aguardando arquivo); editor estilo CapCut (2.5); novo layout.

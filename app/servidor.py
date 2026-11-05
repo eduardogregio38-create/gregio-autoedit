@@ -102,7 +102,7 @@ MOTIVOS = {
 
 # ---------------- PREFERÊNCIAS (tela de ajustes avançados) E RECEITAS ----------------
 
-OP_CAPA_ESTILO = [("classico", "Clássico (sombra)"), ("faixa", "Faixa escura atrás do título"), ("cor", "Letras coloridas")]
+OP_CAPA_ESTILO = [("caixa", "Caixa de cor (estilo Canva)"), ("classico", "Clássico (sombra)"), ("faixa", "Faixa escura atrás do título"), ("cor", "Letras coloridas")]
 PREFS = [
     {"k": "selecao.ritmo_fala", "tipo": "escolha", "grupo": "Cortes", "nome": "Ritmo da fala",
      "op": [("natural", "Natural"), ("dinamico", "Dinâmico"), ("seco", "Bem seco")]},
@@ -694,19 +694,24 @@ def _estado_ocupado(pid, etapa):
     atualizar(pid, estado="editando", etapa=etapa, pct=40, inicio_ts=time.time(), atual=0, total=0)
 
 
-def refazer_capa(pid, foto, rosto=None, titulo=None, estilo=None, posicao=None, cor=None, fonte=None):
+def refazer_capa(pid, foto, rosto=None, titulo=None, estilo=None, posicao=None, cor=None, fonte=None,
+                 cor_caixa=None, tag=None, cor_tag=None, destino=None):
     import capa
     p = ler_projeto(pid)
     cfg = config_edicao(p)
     cp = cfg.get("capa", {})
     trabalho = dir_projeto(pid) / "trabalho"
     nome = nome_arquivo(p["nome"])
-    dest = trabalho / ("CAPA - %s.jpg" % nome)
+    dest = Path(destino) if destino else trabalho / ("CAPA - %s.jpg" % nome)
     logo = DADOS / "logo.png"
     capa.gerar(Path(foto), nome, dest, tuple(rosto) if rosto else None, titulo=(titulo or p.get("titulo") or None),
                logo=logo if logo.exists() else None, estilo=estilo or cp.get("estilo", "classico"),
                fonte=fonte or cp.get("fonte", "Poppins-Bold.ttf"), posicao=posicao or cp.get("posicao", "baixo"),
-               cor=cor or cp.get("cor", "#FFFFFF"), margem_segura=cp.get("margem_segura", True))
+               cor=cor or cp.get("cor", "#FFFFFF"), margem_segura=cp.get("margem_segura", True),
+               cor_caixa=cor_caixa or cp.get("cor_caixa", "#F1F1F1"), tag=(tag if tag is not None else cp.get("tag", "")),
+               cor_tag=cor_tag or cp.get("cor_tag", "#E63843"))
+    if destino:
+        return dest
     arq = dict(p.get("arquivos") or {})
     arq["capa"] = str(dest)
     atualizar(pid, arquivos=arq, rev=int(time.time() * 1000), titulo=titulo if titulo is not None else p.get("titulo"))
@@ -1039,6 +1044,7 @@ class App(BaseHTTPRequestHandler):
                                    "pasta": str(PASTA), "n_musicas": len(lista_musicas()),
                                    "receitas": [[k, v["nome"]] for k, v in RECEITAS.items()],
                                    "aviso_musica_ok": bool(aprendizado().get("aviso_musica_ok")),
+                                   "tutorial_auto": not aprendizado().get("tutorial_visto") and int(aprendizado().get("tutorial_aberturas", 0)) < 2,
                                    "drive": gdrive.link_pasta(conta["pasta_id"]) if ok and conta.get("pasta_id") else None,
                                    "destino": conta.get("destino_nome") if conta.get("pasta_id") else None})
             if url.path == "/api/picker":
@@ -1202,7 +1208,7 @@ class App(BaseHTTPRequestHandler):
                 salvar_aprendizado(ap)
                 return self._json({"ok": True})
 
-            if url.path == "/api/capa":
+            if url.path in ("/api/capa", "/api/capa_teste"):
                 d = self._corpo_json()
                 pid = d["id"]
                 p = ler_projeto(pid)
@@ -1222,9 +1228,24 @@ class App(BaseHTTPRequestHandler):
                         return self._json({"erro": "Envie a imagem primeiro."}, 400)
                 else:
                     return self._json({"erro": "Origem de capa inválida."}, 400)
-                refazer_capa(pid, foto, rosto, titulo=d.get("titulo"), estilo=d.get("estilo") or None,
-                             posicao=d.get("posicao") or None, cor=d.get("cor") or None,
+                hexa = lambda v: v if isinstance(v, str) and re.fullmatch(r"#[0-9A-Fa-f]{6}", v) else None
+                extra = dict(titulo=d.get("titulo"), estilo=d.get("estilo") if d.get("estilo") in ("classico", "faixa", "cor", "caixa") else None,
+                             posicao=d.get("posicao") if d.get("posicao") in ("baixo", "meio", "cima") else None,
+                             cor=hexa(d.get("cor")), cor_caixa=hexa(d.get("cor_caixa")), cor_tag=hexa(d.get("cor_tag")),
+                             tag=str(d["tag"])[:26] if d.get("tag") is not None else None,
                              fonte=d.get("fonte") if d.get("fonte") in [a for a, _ in opcoes_fonte()] else None)
+                if url.path == "/api/capa_teste":  # só a prévia, não muda o vídeo
+                    tmp = trabalho / "_previa_capa.jpg"
+                    refazer_capa(pid, foto, rosto, destino=tmp, **extra)
+                    corpo = tmp.read_bytes()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "image/jpeg")
+                    self.send_header("Content-Length", str(len(corpo)))
+                    self.send_header("Cache-Control", "no-store")
+                    self.end_headers()
+                    self.wfile.write(corpo)
+                    return
+                refazer_capa(pid, foto, rosto, **extra)
                 return self._json({"ok": True})
 
             if url.path == "/api/capa_imagem":
@@ -1268,6 +1289,16 @@ class App(BaseHTTPRequestHandler):
                 f = gerar_relatorio()
                 abrir_no_sistema(f, revelar=True)
                 return self._json({"ok": True, "arquivo": str(f), "email": AJUDA_WHATSAPP_TXT})
+
+            if url.path == "/api/tutorial":
+                d = self._corpo_json()
+                ap = aprendizado()
+                if d.get("acao") == "aberto":
+                    ap["tutorial_aberturas"] = int(ap.get("tutorial_aberturas", 0)) + 1
+                elif d.get("acao") == "fechado":
+                    ap["tutorial_visto"] = True
+                salvar_aprendizado(ap)
+                return self._json({"ok": True})
 
             if url.path == "/api/aviso_musica":
                 ap = aprendizado()

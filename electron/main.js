@@ -15,12 +15,17 @@ let janela = null, backend = null, porta = 0, saindo = false;
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 app.on("second-instance", () => { if (janela) { if (janela.isMinimized()) janela.restore(); janela.focus(); } });
 
-function portaLivre() {
+// Porta fixa de preferência: o navegador do app guarda tema, aba e tutorial por endereço (porta incluída).
+// Com porta sorteada a cada abertura, tudo isso era esquecido. Se a fixa estiver ocupada, sorteia uma.
+function tentarPorta(n) {
   return new Promise((ok, erro) => {
     const s = net.createServer();
-    s.listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => ok(p)); });
+    s.listen(n, "127.0.0.1", () => { const p = s.address().port; s.close(() => ok(p)); });
     s.on("error", erro);
   });
+}
+function portaLivre() {
+  return tentarPorta(47831).catch(() => tentarPorta(0));
 }
 
 function caminhoBackend() {
