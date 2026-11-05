@@ -105,10 +105,10 @@ def preparar_encerramento(arquivo, trabalho: Path, cfg):
 
 # ---------------- PLANEJAMENTO ----------------
 
-def planejar(videos, musica, trabalho: Path, cfg, encerramento=None, prog=None):
+def planejar(videos, musica, trabalho: Path, cfg, encerramento=None, prog=None, cortes=None):
     prog = prog or Progresso()
     itens = analise.analisar(videos, cfg, trabalho / "cache",
-                             progresso=lambda t, a, n: prog("analise", t, a, n))
+                             progresso=lambda t, a, n: prog("analise", t, a, n), cortes=cortes)
     prog("montagem", "Montando a edição")
     for it in itens:
         tipo = "FALA " if selecao.e_fala(it, cfg) else "LOCAL"
@@ -142,7 +142,7 @@ def planejar(videos, musica, trabalho: Path, cfg, encerramento=None, prog=None):
 
 
 CAMPOS_ITEM = ["duracao", "largura", "altura", "fps", "tem_audio", "hdr", "palavras", "confianca",
-               "texto", "tempo_fala", "n_palavras", "clareza", "densidade", "ordem"]
+               "texto", "tempo_fala", "n_palavras", "clareza", "densidade", "ordem", "ini_util", "fim_util"]
 
 
 def para_estado(itens, roteiro, transicoes, descartados, musica):
@@ -220,12 +220,13 @@ def renderizar(nome, itens, roteiro, transicoes, descartados, musica, trabalho: 
             "duracao": render.duracao(final)}
 
 
-def editar(nome, videos, trabalho: Path, cfg, musica=None, encerramento=None, avisar=None, logo=None, titulo=None):
+def editar(nome, videos, trabalho: Path, cfg, musica=None, encerramento=None, avisar=None, logo=None, titulo=None,
+           cortes=None):
     """Faz tudo: análise, montagem e render. Devolve os arquivos e o estado."""
     trabalho.mkdir(parents=True, exist_ok=True)
     prog = Progresso(avisar)
     prog("analise", "Preparando", 0, len(videos))
-    itens, roteiro, transicoes, descartados = planejar(videos, musica, trabalho, cfg, encerramento, prog)
+    itens, roteiro, transicoes, descartados = planejar(videos, musica, trabalho, cfg, encerramento, prog, cortes)
     estado = para_estado(itens, roteiro, transicoes, descartados, musica)
     (trabalho / "estado.json").write_text(json.dumps(estado, ensure_ascii=False), encoding="utf-8")
     saida = renderizar(nome, itens, roteiro, transicoes, descartados, musica, trabalho, cfg, prog, logo, titulo)

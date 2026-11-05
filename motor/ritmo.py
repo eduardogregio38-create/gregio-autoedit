@@ -110,7 +110,7 @@ def ajustar(roteiro, transicoes, tempos, cfg):
     for k, b in enumerate(roteiro):
         if b["tipo"] == "local" and len(b["trechos"]) == 1:
             t = b["trechos"][0]
-            disponivel = b["item"]["duracao"] - 0.05
+            disponivel = b["item"].get("fim_util", b["item"]["duracao"]) - 0.05
             atual = t["fim"] - t["ini"]
             cand = tempos[(tempos >= inicio + dmin) & (tempos <= inicio + max(dmax, atual + 0.3))]
             if len(cand):

@@ -119,7 +119,24 @@ def qualidade_visual(path: Path, amostras_por_seg=1.0):
     return notas
 
 
-def analisar(videos, cfg, cache_dir: Path, progresso=None):
+def faixa_util(duracao, corte):
+    """Parte do take que fica na edição, em segundos (começo, fim). O que a pessoa cortou no começo
+    e no final do take (por exemplo, um erro de fala) fica de fora de tudo: fala, imagens e capa."""
+    ini, fim = 0.0, float(duracao)
+    if corte:
+        try:
+            i = float(corte.get("ini") or 0.0)
+            f = float(corte.get("fim") or duracao)
+        except (TypeError, ValueError):
+            return ini, fim
+        i, f = min(max(i, 0.0), fim), min(max(f, 0.0), fim)
+        if f - i >= 0.5:
+            ini, fim = i, f
+    return ini, fim
+
+
+def analisar(videos, cfg, cache_dir: Path, progresso=None, cortes=None):
+    """cortes: {nome do arquivo: {"ini": segundos, "fim": segundos}} (opcional)."""
     cache_dir.mkdir(parents=True, exist_ok=True)
     itens = []
     for ordem, v in enumerate(videos):
@@ -128,20 +145,24 @@ def analisar(videos, cfg, cache_dir: Path, progresso=None):
             progresso("Analisando os takes", ordem, len(videos))
         info = sondar(v)
         trans = transcrever(v, cfg, cache_dir) if info["tem_audio"] else {"palavras": [], "confianca": -9.0}
-        palavras_reais = [p for p in trans["palavras"] if p["w"].lower().strip(".,!?") not in HESITACOES]
+        ini_util, fim_util = faixa_util(info["duracao"], (cortes or {}).get(v.name))
+        todas = [p for p in trans["palavras"] if p["s"] >= ini_util - 0.1 and p["e"] <= fim_util + 0.1]
+        palavras_reais = [p for p in todas if p["w"].lower().strip(".,!?") not in HESITACOES]
         tempo_fala = sum(p["e"] - p["s"] for p in palavras_reais)
         clareza = (sum(p["p"] for p in palavras_reais) / len(palavras_reais)) if palavras_reais else 0.0
         itens.append({
             "path": v,
             "ordem": ordem,
             **info,
-            "palavras": trans["palavras"],
+            "ini_util": ini_util,
+            "fim_util": fim_util,
+            "palavras": todas,
             "confianca": trans["confianca"],
-            "texto": " ".join(p["w"] for p in trans["palavras"]).strip(),
+            "texto": " ".join(p["w"] for p in todas).strip(),
             "tempo_fala": tempo_fala,
             "n_palavras": len(palavras_reais),
             "clareza": clareza,                                   # certeza média do Whisper nas palavras
-            "densidade": tempo_fala / max(info["duracao"], 0.1),  # quanto do take é fala
-            "visual": qualidade_visual(v),
+            "densidade": tempo_fala / max(fim_util - ini_util, 0.1),  # quanto do take é fala
+            "visual": [(t, n) for t, n in qualidade_visual(v) if ini_util <= t <= fim_util],
         })
     return itens

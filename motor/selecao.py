@@ -62,8 +62,8 @@ def _trechos_de_fala(item, cfg):
     for g in grupos:
         if all(_limpa(p) in HESITACOES for p in g):
             continue
-        ini = max(0.0, g[0]["s"] - sel["margem_antes_seg"])
-        fim = min(item["duracao"], g[-1]["e"] + sel["margem_depois_seg"])
+        ini = max(item.get("ini_util", 0.0), g[0]["s"] - sel["margem_antes_seg"])
+        fim = min(item.get("fim_util", item["duracao"]), g[-1]["e"] + sel["margem_depois_seg"])
         if trechos and ini <= trechos[-1]["fim"]:
             trechos[-1]["fim"] = fim
             trechos[-1]["palavras"] += g
@@ -75,13 +75,14 @@ def _trechos_de_fala(item, cfg):
 def _janelas(item, duracao, max_janelas=4):
     """Os melhores pedaços (sem sobreposição) de um take sem fala.
     Um take longo pode render várias janelas diferentes."""
-    dur = item["duracao"]
+    base = item.get("ini_util", 0.0)  # começo do que sobrou depois dos cortes da pessoa
+    dur = item.get("fim_util", item["duracao"]) - base
     if dur < 1.2:
         return []
     janela = min(duracao, dur - 0.6) if dur > 2 else dur
     ini_min = 0.3 if dur > janela + 0.6 else 0.0
     ini_max = dur - janela - 0.3 if dur > janela + 0.6 else max(0.0, dur - janela)
-    notas = item["visual"]
+    notas = [(tt - base, n) for (tt, n) in item["visual"]]
 
     candidatos = []
     t = ini_min
@@ -94,8 +95,8 @@ def _janelas(item, duracao, max_janelas=4):
 
     escolhidas = []
     for nota, t in candidatos:
-        if all(abs(t - e["ini"]) >= janela for e in escolhidas):
-            escolhidas.append({"item": item, "ini": t, "fim": t + janela, "nota": max(nota, 0.0)})
+        if all(abs(base + t - e["ini"]) >= janela for e in escolhidas):
+            escolhidas.append({"item": item, "ini": base + t, "fim": base + t + janela, "nota": max(nota, 0.0)})
         if len(escolhidas) >= max_janelas:
             break
     return escolhidas
@@ -204,7 +205,7 @@ def montar_entrevista(itens, cfg):
     for it in itens:
         trechos = _trechos_de_fala(it, cfg)
         if not trechos:
-            trechos = [{"ini": 0.0, "fim": it["duracao"], "palavras": []}]
+            trechos = [{"ini": it.get("ini_util", 0.0), "fim": it.get("fim_util", it["duracao"]), "palavras": []}]
         roteiro.append({"tipo": "fala", "item": it, "trechos": trechos, "coberturas": []})
     return roteiro, []
 
@@ -351,7 +352,7 @@ def completar_duracao(roteiro, itens, cfg):
                 break
             if b["tipo"] == "local":
                 t = b["trechos"][0]
-                extra = min(5.0 - (t["fim"] - t["ini"]), b["item"]["duracao"] - 0.05 - t["fim"], falta)
+                extra = min(5.0 - (t["fim"] - t["ini"]), b["item"].get("fim_util", b["item"]["duracao"]) - 0.05 - t["fim"], falta)
                 if extra > 0:
                     t["fim"] += extra
                     falta -= extra

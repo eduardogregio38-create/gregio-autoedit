@@ -343,6 +343,25 @@ def todos_projetos():
     return sorted(lista, key=lambda p: p.get("criado_ts", 0), reverse=True)
 
 
+def limpar_cortes(bruto):
+    """Cortes de começo e fim que a pessoa marcou: {nome do arquivo: {"ini": s, "fim": s}}.
+    Aceita só números sãos; qualquer outra coisa é ignorada."""
+    saida = {}
+    if not isinstance(bruto, dict):
+        return saida
+    for nome, c in bruto.items():
+        if not isinstance(c, dict):
+            continue
+        item = {}
+        for k in ("ini", "fim"):
+            v = c.get(k)
+            if isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v < 86400:
+                item[k] = round(float(v), 2)
+        if item:
+            saida[Path(str(nome)).name] = item
+    return saida
+
+
 def nome_arquivo(nome):
     return re.sub(r'[\\/:*?"<>|]+', "-", nome).strip() or "video"
 
@@ -397,7 +416,8 @@ def editar_projeto(pid):
             cfg["entrevista"] = True
         nome = nome_arquivo(p["nome"])
         r = editor.editar(nome, videos, trabalho, cfg, musica, encerramento, avisar,
-                          logo=logo if logo.exists() else None, titulo=p.get("titulo") or None)
+                          logo=logo if logo.exists() else None, titulo=p.get("titulo") or None,
+                          cortes=p.get("cortes") or None)
         arquivos = {k: str(v) for k, v in r.items() if k in ("video", "capa", "legenda", "pacote") and v}
         atualizar(pid, estado="previa", etapa="Pronto para você ver", pct=100, arquivos=arquivos,
                   duracao=round(r["duracao"], 1), segundos=r["segundos"], fim_ts=time.time())
@@ -716,7 +736,7 @@ class App(BaseHTTPRequestHandler):
                 if not n:
                     atualizar(pid, estado="erro", erro="Nenhum vídeo recebido.")
                     return self._json({"erro": "Nenhum vídeo recebido."}, 400)
-                atualizar(pid, estado="na_fila", etapa="Na fila", n_takes=n)
+                atualizar(pid, estado="na_fila", etapa="Na fila", n_takes=n, cortes=limpar_cortes(d.get("cortes")))
                 enfileirar(pid)
                 return self._json({"ok": True})
 

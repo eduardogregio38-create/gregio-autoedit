@@ -51,6 +51,8 @@ textarea{min-height:70px}
 .ordem .t{color:var(--suave);font-size:13px;white-space:nowrap}
 .ordem .mv{width:32px;height:32px;border-radius:8px;border:1px solid var(--linha);background:var(--fundo);color:var(--texto);font-size:15px;cursor:pointer}
 .ordem .mv:disabled{opacity:.35;cursor:default}
+.ordem .mv.largo{width:auto;padding:0 10px;font-size:13px;white-space:nowrap}
+.corte-info{color:var(--acento);font-size:12px;margin-left:8px;white-space:nowrap}
 .botao{background:var(--acento);color:#fff;border:0;border-radius:9px;padding:11px 18px;font-size:15px;font-weight:600;cursor:pointer}
 .botao:hover{background:var(--acento-escuro)}
 .botao:disabled{opacity:.45;cursor:default}
@@ -253,6 +255,25 @@ a{color:var(--acento)}
   </section>
 </main>
 
+<div class="fundo-modal" id="modal-corte"><div class="modal" style="max-width:640px">
+  <h3 id="corte-nome">Cortar começo e final</h3>
+  <p class="sub" style="margin-bottom:10px">Passe o vídeo até o ponto certo e toque num botão. O que ficar antes do começo e depois do final não entra na edição. O arquivo original não é mexido.</p>
+  <video id="corte-video" controls playsinline style="width:100%;max-height:46vh;background:#000;border-radius:10px"></video>
+  <p class="sub" id="corte-erro" style="display:none;margin:8px 0 0">Não consegui mostrar este vídeo aqui. Dá para cortar mesmo assim: escreva os tempos nos campos abaixo.</p>
+  <p class="sub" id="corte-total" style="margin:8px 0 0"></p>
+  <div class="botoes" style="margin-top:8px">
+    <button class="botao claro pequeno" id="corte-marca-ini">Começar daqui</button>
+    <button class="botao claro pequeno" id="corte-marca-fim">Terminar aqui</button></div>
+  <div class="linha" style="margin-top:12px">
+    <div style="flex:1;min-width:140px"><label>Começa em (min:seg)</label><input type="text" id="corte-ini" placeholder="0:00 (do começo)"></div>
+    <div style="flex:1;min-width:140px"><label>Termina em (min:seg)</label><input type="text" id="corte-fim" placeholder="até o final"></div></div>
+  <div class="botoes">
+    <button class="botao" id="corte-ok">Salvar</button>
+    <button class="botao claro" id="corte-ver">Ver como vai ficar</button>
+    <button class="botao claro" id="corte-limpar">Tirar cortes</button>
+    <button class="botao claro" id="corte-cancelar">Cancelar</button></div>
+</div></div>
+
 <div class="fundo-modal" id="modal"><div class="modal">
   <h2 id="m-titulo">O que não ficou bom?</h2>
   <p class="sub">Marque o que quiser. O app ajusta este vídeo e os próximos.</p>
@@ -321,9 +342,9 @@ $("#arquivos").onchange = e => { adicionar(e.target.files); e.target.value=""; }
 ["dragleave","drop"].forEach(ev=>solta.addEventListener(ev, e=>{e.preventDefault(); solta.classList.remove("sobre");}));
 solta.addEventListener("drop", e=> adicionar(e.dataTransfer.files));
 function adicionar(lista){ for (const f of lista) if(!ARQS.find(a=>a.name===f.name && a.size===f.size)) ARQS.push(f); desenharArqs(); }
-$("#b-limpar").onclick = ()=>{ ARQS=[]; desenharArqs(); };
+$("#b-limpar").onclick = ()=>{ ARQS.forEach(f=>delete CORTES[chaveCorte(f)]); ARQS=[]; desenharArqs(); };
 function desenharArqs(estados){
-  $("#lista-arq").innerHTML = ARQS.map((f,i)=>`<li><span>${esc(f.name)}</span><span>${estados?estados[i]:tamanho(f.size)}</span></li>`).join("");
+  $("#lista-arq").innerHTML = ARQS.map((f,i)=>`<li><span>${esc(f.name)}${infoCorte(f)}</span><span>${estados?estados[i]:tamanho(f.size)}${ehVideo(f)&&!ENVIANDO?` <button class="botao claro pequeno" style="margin-left:8px" onclick="abrirCorte('midias',${i})">✂ Cortar</button>`:""}</span></li>`).join("");
   $("#b-enviar").disabled = !ARQS.length || ENVIANDO;
   $("#b-limpar").style.display = ARQS.length && !ENVIANDO ? "" : "none";
 }
@@ -341,11 +362,65 @@ $("#b-enviar").onclick = async ()=>{
         p=>{ estados[i] = "copiando "+Math.round(p*100)+"%"; desenharArqs(estados); });
       estados[i] = "ok"; desenharArqs(estados);
     }
-    await api("/api/concluir", {id});
+    const cortes = {}; ARQS.forEach(f=>{ const c = CORTES[chaveCorte(f)]; if (c) cortes[f.name] = c; });
+    await api("/api/concluir", {id, cortes});
+    ARQS.forEach(f=>delete CORTES[chaveCorte(f)]);
     ARQS = []; $("#nome").value=""; $("#titulo").value="";
     toast("Pronto! A edição já começou. Acompanhe em Andamento.");
   }catch(e){ toast("Erro: "+e.message); }
   ENVIANDO=false; desenharArqs(); atualizar();
+};
+
+// ---------- cortar começo e final de um vídeo ----------
+const CORTES = {};   // chave do arquivo -> {ini, fim} em segundos (o que fica fora do começo/fim é cortado)
+const chaveCorte = f => f.name + "|" + f.size;
+function fmtTempo(s){ s = Math.round(s*10)/10; const m = Math.floor(s/60), r = s - m*60; return m + ":" + (r<10 ? "0" : "") + r.toFixed(1); }
+function parseTempo(t){   // "1:23.5", "83", "0:05" -> segundos; vazio -> null; inválido -> NaN
+  t = String(t||"").trim().replace(",", "."); if (!t) return null;
+  const p = t.split(":"); if (p.length>3) return NaN;
+  let total = 0; for (const x of p){ if (!/^\d+(\.\d+)?$/.test(x.trim())) return NaN; total = total*60 + parseFloat(x); }
+  return total;
+}
+function infoCorte(f){
+  const c = CORTES[chaveCorte(f)]; if (!c) return "";
+  const partes = []; if (c.ini) partes.push("começa em "+fmtTempo(c.ini)); if (c.fim) partes.push("termina em "+fmtTempo(c.fim));
+  return partes.length ? `<span class="corte-info">✂ ${partes.join(" · ")}</span>` : "";
+}
+let CORTE = null;
+const vc = $("#corte-video");
+function abrirCorte(lista, i){
+  const arq = (lista==="midias" ? ARQS : ENT)[i]; if (!arq) return;
+  const c = CORTES[chaveCorte(arq)] || {};
+  CORTE = {arq, url:URL.createObjectURL(arq), dur:null, vendo:false};
+  $("#corte-nome").textContent = arq.name; $("#corte-total").textContent = "";
+  $("#corte-ini").value = c.ini ? fmtTempo(c.ini) : ""; $("#corte-fim").value = c.fim ? fmtTempo(c.fim) : "";
+  $("#corte-erro").style.display = "none";
+  vc.src = CORTE.url; $("#modal-corte").style.display = "flex";
+}
+function fecharCorte(){
+  vc.pause(); vc.removeAttribute("src"); vc.load();
+  if (CORTE) URL.revokeObjectURL(CORTE.url);
+  CORTE = null; $("#modal-corte").style.display = "none";
+}
+vc.onloadedmetadata = ()=>{ if (CORTE && isFinite(vc.duration)){ CORTE.dur = vc.duration; $("#corte-total").textContent = "Duração do vídeo: "+fmtTempo(vc.duration); } };
+vc.onerror = ()=>{ if (CORTE) $("#corte-erro").style.display = ""; };
+vc.ontimeupdate = ()=>{ if (CORTE && CORTE.vendo){ const f = parseTempo($("#corte-fim").value); if (f && vc.currentTime >= f){ vc.pause(); CORTE.vendo = false; } } };
+$("#corte-marca-ini").onclick = ()=>{ $("#corte-ini").value = fmtTempo(vc.currentTime); };
+$("#corte-marca-fim").onclick = ()=>{ $("#corte-fim").value = fmtTempo(vc.currentTime); };
+$("#corte-ver").onclick = ()=>{ const i = parseTempo($("#corte-ini").value); if (Number.isNaN(i)) return toast("Escreva o tempo assim: 0:05 ou 1:23."); vc.currentTime = i||0; CORTE.vendo = true; vc.play().catch(()=>{}); };
+$("#corte-limpar").onclick = ()=>{ $("#corte-ini").value = ""; $("#corte-fim").value = ""; };
+$("#corte-cancelar").onclick = fecharCorte;
+$("#corte-ok").onclick = ()=>{
+  let ini = parseTempo($("#corte-ini").value), fim = parseTempo($("#corte-fim").value);
+  if (Number.isNaN(ini) || Number.isNaN(fim)) return toast("Escreva o tempo assim: 0:05 ou 1:23.");
+  const dur = CORTE.dur;
+  if (ini!=null && ini<=0.05) ini = null;
+  if (fim!=null && dur && fim>=dur-0.05) fim = null;
+  if (dur && ini!=null && ini>=dur-1) return toast("O começo está depois do fim do vídeo.");
+  if (ini!=null && fim!=null && fim-ini<1) return toast("O final precisa ficar pelo menos 1 segundo depois do começo.");
+  const k = chaveCorte(CORTE.arq);
+  if (ini==null && fim==null) delete CORTES[k]; else { CORTES[k] = {}; if (ini!=null) CORTES[k].ini = ini; if (fim!=null) CORTES[k].fim = fim; }
+  fecharCorte(); desenharArqs(); desenharEnt();
 };
 
 // ---------- entrevistas: lista em ordem ----------
@@ -370,13 +445,14 @@ function moverEnt(i, pos){
   const [f] = ENT.splice(i, 1); ENT.splice(pos, 0, f); desenharEnt();
 }
 function tirarEnt(i){ ENT.splice(i, 1); desenharEnt(); }
-$("#b-limpar-ent").onclick = ()=>{ ENT=[]; desenharEnt(); };
+$("#b-limpar-ent").onclick = ()=>{ ENT.forEach(f=>delete CORTES[chaveCorte(f)]); ENT=[]; desenharEnt(); };
 function desenharEnt(estados){
   const n = ENT.length, off = ENVIANDO_ENT ? "disabled" : "";
   $("#lista-ent").innerHTML = ENT.map((f,i)=>`<li>
       <input class="pos" type="number" min="1" max="${n}" value="${i+1}" ${off} onchange="moverEnt(${i}, this.value)">
-      <span class="n" title="${esc(f.name)}">${esc(f.name)}</span>
+      <span class="n" title="${esc(f.name)}">${esc(f.name)}${infoCorte(f)}</span>
       <span class="t">${estados?estados[i]:tamanho(f.size)}</span>
+      <button class="mv largo" ${off} onclick="abrirCorte('entrevistas',${i})" title="Cortar começo e final">✂ Cortar</button>
       <button class="mv" ${off} ${i===0?"disabled":""} onclick="moverEnt(${i}, ${i})" title="Subir">↑</button>
       <button class="mv" ${off} ${i===n-1?"disabled":""} onclick="moverEnt(${i}, ${i+2})" title="Descer">↓</button>
       <button class="mv" ${off} onclick="tirarEnt(${i})" title="Tirar da lista">✕</button></li>`).join("");
@@ -392,15 +468,17 @@ $("#b-enviar-ent").onclick = async ()=>{
   try{
     const {id} = await api("/api/novo", {nome, titulo:$("#titulo-ent").value, estilo:$("#estilo-ent").value, modo:"entrevista"});
     const largura = Math.max(2, String(ENT.length).length);
-    const estados = ENT.map(()=> "aguardando");
+    const estados = ENT.map(()=> "aguardando"), cortes = {};
     for (let i=0;i<ENT.length;i++){
       // o número no começo do nome é o que guarda a ordem escolhida
       const nomeArq = String(i+1).padStart(largura,"0") + "_" + ENT[i].name;
+      if (CORTES[chaveCorte(ENT[i])]) cortes[nomeArq] = CORTES[chaveCorte(ENT[i])];
       await enviarArquivo(`/api/arquivo?id=${id}&nome=${encodeURIComponent(nomeArq)}`, ENT[i],
         p=>{ estados[i] = "copiando "+Math.round(p*100)+"%"; desenharEnt(estados); });
       estados[i] = "ok"; desenharEnt(estados);
     }
-    await api("/api/concluir", {id});
+    await api("/api/concluir", {id, cortes});
+    ENT.forEach(f=>delete CORTES[chaveCorte(f)]);
     ENT = []; $("#nome-ent").value=""; $("#titulo-ent").value="";
     toast("Pronto! A edição já começou. Acompanhe em Andamento.");
   }catch(e){ toast("Erro: "+e.message); }
