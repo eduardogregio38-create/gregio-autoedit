@@ -10,7 +10,7 @@ Estrutura do vídeo (baseada nos vídeos de referência):
 import random
 from difflib import SequenceMatcher
 
-from analise import HESITACOES
+from analise import HESITACOES, ponto_silencioso
 
 ABERTURA = ["oi", "olá", "ola", "bom dia", "boa tarde", "boa noite", "bem-vindo", "bem-vinda",
             "bem-vindos", "bem vindo", "bem vindos", "sejam", "e aí", "eu sou", "meu nome",
@@ -43,15 +43,47 @@ def _pontua(texto, termos, inicio=True):
     return pontos
 
 
+def tirar_recomecos(palavras, max_erro=12, janela_seg=6.0):
+    """Quando a pessoa erra e recomeça a frase no mesmo take ('a escola tem... a escola tem cursos'),
+    fica só a última versão. Marca a primeira palavra que sobrou com x=(início, fim) do trecho removido."""
+    ps = [dict(p) for p in palavras]
+    norm = [_limpa(p) for p in ps]
+    i, saida = 0, []
+    while i < len(ps):
+        removido = None
+        for n in (3, 2):
+            if i + n > len(ps) or any(w in HESITACOES for w in norm[i:i + n]):
+                continue
+            ref = norm[i:i + n]
+            for j in range(i + n, min(len(ps) - n + 1, i + n + max_erro + 1)):
+                if ps[j]["s"] - ps[i]["s"] > janela_seg:
+                    break
+                if norm[j:j + n] == ref:
+                    removido = j
+                    break
+            if removido:
+                break
+        if removido:
+            ps[removido]["x"] = (ps[i]["s"], ps[removido - 1]["e"])
+            i = removido
+            continue
+        saida.append(ps[i])
+        i += 1
+    return saida
+
+
 def _trechos_de_fala(item, cfg):
     """Quebra a fala em trechos, cortando as pausas longas e hesitações soltas."""
     sel = cfg["selecao"]
-    pausa_max = sel["pausa_max_seg"]
+    pausa_max = {"natural": 0.6, "dinamico": 0.4, "seco": 0.25}.get(sel.get("ritmo_fala", "natural"),
+                                                                    sel["pausa_max_seg"])
     if cfg.get("entrevista"):
         pausa_max = max(pausa_max, 0.9)  # entrevista: respiros naturais ficam, só as pausas longas saem
+    energia = item.get("energia")
+    palavras = tirar_recomecos(item["palavras"]) if sel.get("tirar_recomecos", True) else item["palavras"]
     grupos, atual = [], []
-    for p in item["palavras"]:
-        if atual and p["s"] - atual[-1]["e"] > pausa_max:
+    for p in palavras:
+        if atual and (p["s"] - atual[-1]["e"] > pausa_max or p.get("x") is not None):
             grupos.append(atual)
             atual = []
         atual.append(p)
@@ -64,7 +96,15 @@ def _trechos_de_fala(item, cfg):
             continue
         ini = max(item.get("ini_util", 0.0), g[0]["s"] - sel["margem_antes_seg"])
         fim = min(item.get("fim_util", item["duracao"]), g[-1]["e"] + sel["margem_depois_seg"])
-        if trechos and ini <= trechos[-1]["fim"]:
+        recomeco = g[0].get("x")
+        if recomeco is not None:  # tem um erro tirado logo antes: não deixa o começo dele vazar
+            ini = max(ini, recomeco[1] - 0.02, g[0]["s"] - 0.15)
+            if trechos:
+                trechos[-1]["fim"] = min(trechos[-1]["fim"], recomeco[0])
+        if energia and sel.get("cortes_precisos", True):  # cola o corte no ponto mais silencioso por perto
+            ini = max(item.get("ini_util", 0.0), min(ponto_silencioso(energia, ini, 0.12, 0.06), g[0]["s"] - 0.03))
+            fim = min(item.get("fim_util", item["duracao"]), max(ponto_silencioso(energia, fim, 0.06, 0.15), g[-1]["e"] + 0.03))
+        if trechos and ini <= trechos[-1]["fim"] and recomeco is None:
             trechos[-1]["fim"] = fim
             trechos[-1]["palavras"] += g
         else:
@@ -119,14 +159,17 @@ def _remover_repeticoes(falas, cfg):
     for g in grupos:
         def nota(it):
             hes = sum(1 for p in it["palavras"] if _limpa(p) in HESITACOES)
-            return it["confianca"] - 0.04 * hes + 0.02 * it["ordem"]
+            pausas = sum(1 for a, b in zip(it["palavras"], it["palavras"][1:]) if b["s"] - a["e"] > 0.8)
+            nitidez = (sum(n for _, n in it["visual"]) / len(it["visual"])) if it.get("visual") else 0.5
+            return (it["confianca"] - 0.04 * hes - 0.03 * pausas + 0.5 * it.get("clareza", 0.0)
+                    + 0.3 * nitidez + 0.02 * it["ordem"])
         g["itens"].sort(key=nota, reverse=True)
         escolhidos.append(g["itens"][0])
         descartados += g["itens"][1:]
     return escolhidos, descartados
 
 
-def _ordenar_falas(blocos):
+def _ordenar_falas(blocos, cfg=None):
     """Saudação abre, convite/despedida fecha, o meio fica em ordem livre."""
     if len(blocos) <= 1:
         return blocos
@@ -141,8 +184,43 @@ def _ordenar_falas(blocos):
         resto.remove(fechamento)
     else:
         fechamento = None
-    random.shuffle(resto)
+    if (cfg or {}).get("selecao", {}).get("ordem_meio", "sortear") != "gravacao":
+        random.shuffle(resto)
     return ([abertura] if abertura else []) + resto + ([fechamento] if fechamento else [])
+
+
+def _assinatura(j):
+    ass = [h for (t, h) in j["item"].get("assinaturas", []) if j["ini"] <= t <= j["fim"]]
+    if not ass:
+        return None
+    n = len(ass[0])
+    return [sum(h[k] for h in ass) / len(ass) for k in range(n)]
+
+
+def _distancia(a, b):
+    if a is None or b is None:
+        return 0.5
+    return sum(abs(x - y) for x, y in zip(a, b)) / 2
+
+
+def _escolher_variados(janelas, limite):
+    """Escolhe imagens de lugares diferentes: cada nova escolha prefere a que mais se
+    parece pouco com as já escolhidas (cores), sem esquecer a nota de qualidade."""
+    if len(janelas) <= 2:
+        return _embaralhar_sem_repetir(list(janelas))[:limite]
+    restantes = list(janelas)
+    random.shuffle(restantes)
+    sig = {id(j): _assinatura(j) for j in restantes}
+    escolhidas = [restantes.pop(0)]
+    while restantes and len(escolhidas) < limite:
+        def valor(j):
+            d = min(_distancia(sig[id(j)], sig[id(e)]) for e in escolhidas)
+            outro_take = 0.15 if all(j["item"] is not e["item"] for e in escolhidas[-1:]) else 0.0
+            return d + 0.35 * j["nota"] + outro_take
+        melhor = max(restantes, key=valor)
+        restantes.remove(melhor)
+        escolhidas.append(melhor)
+    return escolhidas
 
 
 def _embaralhar_sem_repetir(janelas):
@@ -234,14 +312,14 @@ def montar_roteiro(itens, cfg):
         trechos = _trechos_de_fala(it, cfg)
         if trechos:
             blocos_fala.append({"tipo": "fala", "item": it, "trechos": trechos, "coberturas": []})
-    blocos_fala = _ordenar_falas(blocos_fala)
+    blocos_fala = _ordenar_falas(blocos_fala, cfg)
 
     # todas as janelas boas das imagens do local, em ordem aleatória
     pool = []
     for it in locais:
         pool += _janelas(it, sel["duracao_local_seg"])
     pool = [j for j in pool if j["nota"] >= 0.2] or pool
-    pool = _embaralhar_sem_repetir(pool)[: sel["max_takes_local"]]
+    pool = _escolher_variados(pool, sel["max_takes_local"])
 
     def bloco_local(j):
         return {"tipo": "local", "item": j["item"], "coberturas": [],
@@ -297,7 +375,47 @@ def montar_roteiro(itens, cfg):
             break
         roteiro.pop(locais_idx[-1])
 
+    if sel.get("gancho", False):
+        g = _gancho(blocos_fala, roteiro, cfg)
+        if g:
+            roteiro.insert(0, g)
     return roteiro, descartados
+
+
+PROMESSA = {"descubra", "segredo", "novidade", "novo", "nova", "grátis", "gratuito", "gratuita", "bolsa", "desconto",
+            "vagas", "incrível", "imperdível", "transforma", "mudar", "primeira", "único", "única", "garanta", "veja"}
+
+
+def _gancho(blocos_fala, roteiro, cfg):
+    """Frase mais forte (pergunta, número ou promessa), curta, para abrir o vídeo nos primeiros segundos."""
+    melhor, nota_melhor = None, 0.0
+    for b in blocos_fala:
+        for t in b["trechos"]:
+            pals = [p for p in t["palavras"]]
+            for i in range(len(pals)):
+                for j in range(i + 4, min(len(pals), i + 14) + 1):
+                    seg = pals[i:j]
+                    d = seg[-1]["e"] - seg[0]["s"]
+                    if d < 1.5 or d > 4.5:
+                        continue
+                    textos = [_limpa(p) for p in seg]
+                    nota = 0.0
+                    if seg[-1]["w"].endswith("?"):
+                        nota += 2.0
+                    nota += 1.5 * sum(1 for w in textos if any(c.isdigit() for c in w) or w in ("mil", "milhão", "milhões"))
+                    nota += 1.0 * sum(1 for w in textos if w in PROMESSA)
+                    nota += 0.5 if seg[-1]["w"].endswith((".", "!", "?")) else 0.0
+                    if any(w in textos for w in ABERTURA[:8]):
+                        nota -= 2.0
+                    if nota > nota_melhor:
+                        melhor, nota_melhor = (b, seg), nota
+    if not melhor or nota_melhor < 1.5:
+        return None
+    b, seg = melhor
+    return {"tipo": "fala", "item": b["item"], "coberturas": [], "gancho": True,
+            "trechos": [{"ini": max(b["item"].get("ini_util", 0.0), seg[0]["s"] - 0.12),
+                         "fim": min(b["item"].get("fim_util", b["item"]["duracao"]), seg[-1]["e"] + 0.2),
+                         "palavras": [dict(p) for p in seg]}]}
 
 
 def duracao_conteudo(roteiro):

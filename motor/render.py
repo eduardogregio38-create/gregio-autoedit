@@ -8,10 +8,39 @@ FORMATOS = {"vertical": (1080, 1920), "horizontal": (1920, 1080), "quadrado": (1
 BASE = Path(__file__).parent
 
 
+import threading
+
+CANCELAR = threading.Event()
+
+
+class Cancelado(Exception):
+    pass
+
+
 def run(cmd):
-    r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
-    if r.returncode != 0:
-        print(r.stderr[-3000:])
+    """Roda o FFmpeg; se a pessoa cancelar a edição, interrompe na hora."""
+    if CANCELAR.is_set():
+        raise Cancelado()
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
+                         errors="replace")
+    saida = [""]
+
+    def ler():
+        saida[0] = p.stderr.read()
+    t = threading.Thread(target=ler, daemon=True)
+    t.start()
+    while p.poll() is None:
+        if CANCELAR.is_set():
+            p.kill()
+            p.wait()
+            raise Cancelado()
+        try:
+            p.wait(timeout=0.4)
+        except subprocess.TimeoutExpired:
+            pass
+    t.join(timeout=5)
+    if p.returncode != 0:
+        print(saida[0][-3000:])
         raise RuntimeError("FFmpeg falhou: " + " ".join(cmd[:6]) + " ...")
 
 
@@ -34,23 +63,114 @@ def _modelo_rnnoise():
     return p if p.exists() else None
 
 
-def filtro_voz(cfg):
-    """Cadeia de tratamento da voz: tira ronco grave, ruído de fundo,
-    som abafado e chiado de 's', comprime e normaliza o volume."""
+NIVEIS_RUIDO = {"suave": 8, "medio": 14, "forte": 22}
+
+
+def nivel_ruido(cfg, item=None):
+    n = cfg["audio"].get("nivel_ruido", "auto")
+    if n in NIVEIS_RUIDO:
+        return n
+    db = (item or {}).get("ruido_db", -60.0)   # auto: escolhe pelo ruído de fundo medido no take
+    return "forte" if db > -38 else "medio" if db > -50 else "suave"
+
+
+def filtro_voz(cfg, item=None, ganho_db=None):
+    """Cadeia de tratamento da voz: tira ronco grave (e vento), ruído de fundo,
+    som abafado e chiado de 's', comprime e acerta o volume.
+    Com ganho_db, o volume é um ajuste fixo medido antes (igual entre os takes); sem ele, usa loudnorm."""
     modelo = _modelo_rnnoise() if cfg["audio"]["reducao_ruido"] == "rnnoise" else None
-    reducao = f"arnndn=m='{caminho_filtro(modelo)}':mix=0.9" if modelo else "afftdn=nr=14:nf=-35:tn=1"
-    return ",".join([
-        "highpass=f=85",
+    nr = NIVEIS_RUIDO[nivel_ruido(cfg, item)]
+    reducao = f"arnndn=m='{caminho_filtro(modelo)}':mix=0.9" if modelo else f"afftdn=nr={nr}:nf=-35:tn=1"
+    vento = (item or {}).get("vento") and cfg["audio"].get("filtro_vento", True)
+    partes = [
+        "highpass=f=160,highpass=f=160" if vento else "highpass=f=85",
         reducao,
         "equalizer=f=250:t=q:w=1.2:g=-3",     # menos som de caixa/abafado
         "equalizer=f=3200:t=q:w=1.4:g=2.5",   # mais clareza na voz
         "equalizer=f=10000:t=h:w=1:g=1.5",    # um pouco de brilho
         "deesser=i=0.35",
         "acompressor=threshold=-21dB:ratio=3:attack=8:release=160:makeup=2",
-        "loudnorm=I=-16:TP=-1.5:LRA=9",
-        "aresample=48000",
-        "aformat=channel_layouts=stereo",
-    ])
+    ]
+    if ganho_db is None:
+        partes.append("loudnorm=I=-16:TP=-1.5:LRA=9")
+    else:
+        partes += [f"volume={ganho_db:.2f}dB", "alimiter=limit=0.89"]
+    partes += ["aresample=48000", "aformat=channel_layouts=stereo"]
+    return ",".join(partes)
+
+
+def medir_ganho_voz(bloco, cfg, alvo=-16.0):
+    """Mede o volume da voz tratada (LUFS) e devolve o ajuste em dB para chegar ao alvo.
+    Todos os takes ficam no mesmo volume, sem o efeito de 'bombeio' do ajuste dinâmico."""
+    it = bloco["item"]
+    if not it.get("tem_audio") or not cfg["audio"].get("igualar_volume", True):
+        return None
+    try:
+        cmd = ["ffmpeg", "-hide_banner", "-nostats"]
+        for t in bloco["trechos"]:
+            cmd += ["-ss", f"{t['ini']:.3f}", "-t", f"{t['fim'] - t['ini']:.3f}", "-i", str(it["path"])]
+        n = len(bloco["trechos"])
+        partes = [f"[{k}:a]aresample=48000,aformat=channel_layouts=stereo[a{k}]" for k in range(n)]
+        partes.append("".join(f"[a{k}]" for k in range(n)) + f"concat=n={n}:v=0:a=1[ac]")
+        partes.append("[ac]" + filtro_voz(cfg, it, ganho_db=0.0) + ",ebur128=framelog=quiet[o]")
+        cmd += ["-filter_complex", ";".join(partes), "-map", "[o]", "-f", "null", "-"]
+        r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        import re
+        m = re.findall(r"I:\s*(-?\d+(?:\.\d+)?)\s*LUFS", r.stderr)
+        if not m:
+            return None
+        lufs = float(m[-1])
+        if lufs < -60:
+            return None
+        return max(-12.0, min(18.0, alvo - lufs))
+    except Exception:
+        return None
+
+
+# ---------------- CODEC DE VÍDEO (chip do computador, se tiver) ----------------
+
+_HW = {}
+
+
+def _testar_codec(nome, extra):
+    try:
+        r = subprocess.run(["ffmpeg", "-hide_banner", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=640x360:d=0.5:r=30",
+                            "-c:v", nome, *extra, "-pix_fmt", "yuv420p", "-f", "null", "-"],
+                           capture_output=True, text=True, timeout=25)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def codec_video(cfg):
+    """Devolve (argumentos do codec, usa_chip). Tenta VideoToolbox (Mac), NVENC, QuickSync e AMF (Windows);
+    se nenhum funcionar, usa o libx264 de sempre."""
+    if cfg.get("aceleracao", "auto") == "nenhuma":
+        return None
+    if "r" not in _HW:
+        import sys
+        lista = (["h264_videotoolbox"] if sys.platform == "darwin" else
+                 ["h264_nvenc", "h264_qsv", "h264_amf"] if sys.platform.startswith("win") else
+                 ["h264_nvenc"])
+        extras = {"h264_videotoolbox": ["-b:v", "14M", "-allow_sw", "1"],
+                  "h264_nvenc": ["-preset", "p5", "-rc", "vbr", "-cq", "22", "-b:v", "0"],
+                  "h264_qsv": ["-global_quality", "22", "-preset", "medium"],
+                  "h264_amf": ["-quality", "quality", "-rc", "cqp", "-qp_i", "21", "-qp_p", "22"]}
+        _HW["r"] = None
+        for nome in lista:
+            if _testar_codec(nome, extras[nome]):
+                _HW["r"] = ["-c:v", nome, *extras[nome]]
+                print("  vídeo: usando o chip do computador (%s)" % nome)
+                break
+    return _HW["r"]
+
+
+def args_video(cfg):
+    hw = codec_video(cfg)
+    if hw:
+        return hw
+    return ["-c:v", "libx264", "-preset", cfg.get("preset_x264", "veryfast"), "-crf", str(cfg.get("crf", 20)),
+            "-threads", str(cfg.get("_threads", 0))]
 
 
 _TEM_ZSCALE = None
@@ -80,11 +200,19 @@ def qualidade(cfg):
             "-threads", str(cfg.get("_threads", 0))]
 
 
-def filtro_video(cfg, larg_src, alt_src, tag="x", hdr=False):
+def filtro_video(cfg, larg_src, alt_src, tag="x", hdr=False, brilho=None, estabilizar=False):
     W, H = tamanho(cfg)
     pre = _tonemap() if hdr else ""
+    if estabilizar and cfg.get("video", {}).get("estabilizar", False):
+        pre += "deshake=rx=24:ry=24:edge=mirror,"
+    v = cfg.get("video", {})
+    if brilho is not None and brilho < 0.30 and v.get("melhorar_escuro", True):  # take escuro: clareia e tira granulação
+        pre += "hqdn3d=3:3:5:5,eq=gamma=1.25:brightness=0.04:contrast=1.05,"
     fps = cfg["fps"]
-    fim = f"fps={fps},format=yuv420p,settb=AVTB"
+    nitidez = ""
+    if v.get("nitidez_final", True) and larg_src and max(larg_src, alt_src) > max(W, H) * 1.25:
+        nitidez = ",unsharp=5:5:0.45:3:3:0.0"   # reforço leve depois de reduzir 4K para 1080p
+    fim = f"{nitidez.lstrip(',') + ',' if nitidez else ''}fps={fps},format=yuv420p,settb=AVTB"
     proporcao_src = larg_src / alt_src
     proporcao_dst = W / H
     muito_diferente = max(proporcao_src, proporcao_dst) / min(proporcao_src, proporcao_dst) > 1.3
@@ -112,18 +240,22 @@ def render_bloco(bloco, indice, pasta: Path, cfg):
 
     partes = []
     for k in range(n):
-        partes.append(f"[{k}:v]{filtro_video(cfg, it['largura'], it['altura'], f't{k}', it.get('hdr', False))}[v{k}]")
+        partes.append(f"[{k}:v]{filtro_video(cfg, it['largura'], it['altura'], f't{k}', it.get('hdr', False), it.get('brilho'), bloco['tipo'] == 'local')}[v{k}]")
 
     ambiente_db = cfg["audio"]["som_ambiente_takes_local_db"]
     usa_audio_original = it["tem_audio"] and (bloco["tipo"] in ("fala", "encerramento") or ambiente_db > -90)
 
+    ganho = medir_ganho_voz(bloco, cfg) if usa_audio_original and bloco["tipo"] == "fala" else None
     if usa_audio_original:
-        for k in range(n):
-            partes.append(f"[{k}:a]aresample=48000,aformat=channel_layouts=stereo[a{k}]")
+        for k in range(n):  # fade curtinho nas emendas: sem estalo
+            dk = bloco["trechos"][k]["fim"] - bloco["trechos"][k]["ini"]
+            f = min(0.025, dk / 4)
+            fade = f",afade=t=in:st=0:d={f:.3f},afade=t=out:st={max(0, dk - f):.3f}:d={f:.3f}" if cfg["audio"].get("fade_emendas", True) and dk > 0.15 else ""
+            partes.append(f"[{k}:a]aresample=48000,aformat=channel_layouts=stereo{fade}[a{k}]")
         entrada = "".join(f"[v{k}][a{k}]" for k in range(n))
         partes.append(f"{entrada}concat=n={n}:v=1:a=1[vc][ac]")
         if bloco["tipo"] == "fala":
-            partes.append(f"[ac]{filtro_voz(cfg)}[aout]")
+            partes.append(f"[ac]{filtro_voz(cfg, it, ganho)}[aout]")
         elif bloco["tipo"] == "encerramento":
             partes.append("[ac]aresample=48000[aout]")
         else:
@@ -140,7 +272,7 @@ def render_bloco(bloco, indice, pasta: Path, cfg):
     for j, c in enumerate(coberturas):
         idx = n + j
         fim = c["t"] + (c["fim"] - c["ini"])
-        vfc = filtro_video(cfg, c["item"]["largura"], c["item"]["altura"], f"c{j}", c["item"].get("hdr", False))
+        vfc = filtro_video(cfg, c["item"]["largura"], c["item"]["altura"], f"c{j}", c["item"].get("hdr", False), c["item"].get("brilho"), True)
         partes.append(f"[{idx}:v]{vfc},setpts=PTS-STARTPTS+{c['t']:.3f}/TB[cb{j}]")
         partes.append(f"{vant}[cb{j}]overlay=enable='between(t,{c['t']:.3f},{fim:.3f})':eof_action=pass[vo{j}]")
         vant = f"[vo{j}]"
@@ -173,7 +305,7 @@ def render_bloco(bloco, indice, pasta: Path, cfg):
     cmd += [
         "-filter_complex", ";".join(partes),
         "-map", vant, "-map", "[aout]",
-        "-c:v", "libx264", *qualidade(cfg),
+        *args_video(cfg),
         "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
         "-movflags", "+faststart", str(destino),
     ]
@@ -262,7 +394,7 @@ def juntar_com_transicoes(roteiro, tipos, destino: Path, cfg):
     cmd += [
         "-filter_complex", ";".join(partes),
         "-map", "[v]", "-map", "[a]",
-        "-c:v", "libx264", *qualidade(cfg), "-pix_fmt", "yuv420p",
+        *args_video(cfg), "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
         "-movflags", "+faststart", str(destino),
     ]
@@ -270,47 +402,94 @@ def juntar_com_transicoes(roteiro, tipos, destino: Path, cfg):
     return inicios
 
 
-def finalizar(video: Path, musica, srt, destino: Path, cfg, fim_musica=None):
-    """Mistura a música com ducking (baixa sozinha quando alguém fala),
-    normaliza o volume final e, se pedido, grava a legenda na imagem."""
+def _expr_realce(realces, db, rampa=0.4):
+    """Ganho extra da música (em linear) nos trechos só com imagem, com subida e descida suaves."""
+    g = 10 ** (db / 20) - 1
+    termos = []
+    for (a, b) in realces:
+        r = min(rampa, max((b - a) / 2, 0.05))
+        termos.append(f"clip(min((t-{a:.3f})/{r:.3f},({b:.3f}-t)/{r:.3f}),0,1)")
+    return f"1+{g:.4f}*(" + "+".join(termos) + ")"
+
+
+def finalizar(video: Path, musica, srt, destino: Path, cfg, fim_musica=None, realces=None, efeitos=None,
+              inicio_musica=0.0, ganho_musica_db=0.0, ass=None):
+    """Mistura a música com ducking (baixa sozinha quando alguém fala), sobe a música nos trechos só com
+    imagem, coloca efeitos nas transições, normaliza o volume final e, se pedido, grava a legenda na imagem."""
     total = duracao(video)
     fim_m = min(fim_musica or total, total)
     a = cfg["audio"]
     cmd = ["ffmpeg", "-y", "-hide_banner", "-i", str(video)]
     partes = []
+    entradas = 1
 
     if musica:
-        cmd += ["-stream_loop", "-1", "-i", str(musica)]
+        dm = duracao(musica)
+        util = max(dm - inicio_musica, 1.0)
+        copias = 1 if util >= fim_m + 0.5 else min(8, int(fim_m // max(util - 2.0, 1.0)) + 2)
+        for _ in range(copias):
+            cmd += ["-ss", f"{inicio_musica:.3f}", "-i", str(musica)]
+        base = "[1:a]"
+        if copias > 1:  # música curta: repete emendando com fusão suave, sem corte seco
+            ant = "[1:a]"
+            for k in range(2, copias + 1):
+                partes.append(f"{ant}[{k}:a]acrossfade=d=2:c1=tri:c2=tri[ml{k}]")
+                ant = f"[ml{k}]"
+            base = ant
+        entradas += copias
+        db = a["volume_musica_db"] + ganho_musica_db
+        vol = f"volume={db}dB"
+        if realces and a.get("musica_alta_sem_fala", True):
+            vol = f"volume={db}dB,volume='{_expr_realce(realces[:40], a.get('realce_musica_db', 5))}':eval=frame"
         partes.append(
-            f"[1:a]aresample=48000,aformat=channel_layouts=stereo,volume={a['volume_musica_db']}dB,"
+            f"{base}aresample=48000,aformat=channel_layouts=stereo,{vol},"
             f"afade=t=in:st=0:d=1.0,afade=t=out:st={max(0, fim_m - 1.5):.3f}:d=1.5,"
             f"atrim=0:{fim_m:.3f},apad=whole_dur={total:.3f}[m]"
         )
         if a["ducking"]:
             partes.append("[0:a]asplit=2[voz][chave]")
             partes.append("[m][chave]sidechaincompress=threshold=0.02:ratio=10:attack=15:release=400[md]")
-            partes.append("[voz][md]amix=inputs=2:duration=first:normalize=0[mix]")
+            ult = "[voz][md]"
         else:
-            partes.append("[0:a][m]amix=inputs=2:duration=first:normalize=0[mix]")
+            ult = "[0:a][m]"
+        n_mix = 2
+    else:
+        ult, n_mix = "[0:a]", 1
+
+    extras_fx = []
+    for (arq, t) in (efeitos or [])[:20]:
+        cmd += ["-i", str(arq)]
+        partes.append(f"[{entradas}:a]aresample=48000,aformat=channel_layouts=stereo,volume=-10dB,"
+                      f"adelay={int(max(0, t) * 1000)}|{int(max(0, t) * 1000)}[fx{entradas}]")
+        extras_fx.append(f"[fx{entradas}]")
+        entradas += 1
+    if musica or extras_fx:
+        partes.append(f"{ult}{''.join(extras_fx)}amix=inputs={n_mix + len(extras_fx)}:duration=first:normalize=0[mix]")
     else:
         partes.append("[0:a]anull[mix]")
 
     partes.append(f"[mix]loudnorm=I={a['loudness_final_lufs']}:TP=-1.5:LRA=11,"
                   "aresample=48000,alimiter=limit=0.95[aout]")
 
-    queimar = srt and cfg["legendas"]["queimar_no_video"]
+    queimar = (ass is not None) or (srt and cfg["legendas"]["queimar_no_video"] and cfg["legendas"].get("estilo", "destaque") == "simples")
     if queimar:
         lg = cfg["legendas"]
-        margem = lg.get("margem_inferior", 60 if cfg["formato"] == "vertical" else 25)
-        caminho = caminho_filtro(srt)
         pasta_fontes = caminho_filtro(BASE.parent / "assets" / "fonts")
-        estilo = (f"FontName={lg.get('fonte', 'DejaVu Sans')},FontSize={lg.get('tamanho', 13)},"
-                  f"Bold={1 if lg.get('negrito', False) else 0},"
-                  f"PrimaryColour={lg.get('cor', '&H00FFFFFF')},OutlineColour={lg.get('cor_contorno', '&H00000000')},"
-                  f"BorderStyle=1,Outline={lg.get('contorno', 2)},Shadow={lg.get('sombra', 0)},"
-                  f"Alignment=2,MarginV={margem}")
-        partes.append(f"[0:v]subtitles='{caminho}':fontsdir='{pasta_fontes}':force_style='{estilo}'[vout]")
-        mapa_v = ["-map", "[vout]", "-c:v", "libx264", *qualidade(cfg), "-pix_fmt", "yuv420p"]
+        if ass is not None:
+            extra = Path(ass).parent / "fontes_ass"
+            if extra.is_dir():
+                pasta_fontes = caminho_filtro(extra)
+            partes.append(f"[0:v]ass='{caminho_filtro(ass)}':fontsdir='{pasta_fontes}'[vout]")
+        else:
+            margem = lg.get("margem_inferior", 60 if cfg["formato"] == "vertical" else 25)
+            caminho = caminho_filtro(srt)
+            estilo = (f"FontName={lg.get('fonte', 'DejaVu Sans')},FontSize={lg.get('tamanho', 13)},"
+                      f"Bold={1 if lg.get('negrito', False) else 0},"
+                      f"PrimaryColour={lg.get('cor', '&H00FFFFFF')},OutlineColour={lg.get('cor_contorno', '&H00000000')},"
+                      f"BorderStyle=1,Outline={lg.get('contorno', 2)},Shadow={lg.get('sombra', 0)},"
+                      f"Alignment=2,MarginV={margem}")
+            partes.append(f"[0:v]subtitles='{caminho}':fontsdir='{pasta_fontes}':force_style='{estilo}'[vout]")
+        mapa_v = ["-map", "[vout]", *args_video(cfg), "-pix_fmt", "yuv420p"]
     else:
         mapa_v = ["-map", "0:v", "-c:v", "copy"]
 

@@ -35,7 +35,10 @@ def palavras_na_timeline(roteiro, inicios):
 
 
 def gerar_srt(roteiro, inicios, destino: Path, max_chars=32):
-    palavras = palavras_na_timeline(roteiro, inicios)
+    return srt_de_palavras(palavras_na_timeline(roteiro, inicios), destino, max_chars)
+
+
+def srt_de_palavras(palavras, destino: Path, max_chars=32):
     if not palavras:
         return None
     legendas, atual = [], []
@@ -61,6 +64,122 @@ def gerar_srt(roteiro, inicios, destino: Path, max_chars=32):
         texto = " ".join(x["w"] for x in grupo).strip()
         linhas.append(f"{n}\n{_ts(ini)} --> {_ts(fim)}\n{texto}\n")
     destino.write_text("\n".join(linhas), encoding="utf-8")
+    return destino
+
+
+# ---------------- LEGENDA NO VÍDEO (ASS), NOME NA TELA E TEXTO FINAL ----------------
+
+def _ass_t(t):
+    t = max(0.0, t)
+    h, r = divmod(t, 3600)
+    m, s = divmod(r, 60)
+    return "%d:%02d:%05.2f" % (h, m, s)
+
+
+def _limpo(txt):
+    return str(txt).replace("{", "(").replace("}", ")").replace("\\", "/").replace("\n", " ")
+
+
+def _cor_ass(hexcor, padrao="&H0000D4FF"):
+    """'#RRGGBB' -> '&H00BBGGRR'."""
+    try:
+        h = hexcor.lstrip("#")
+        return "&H00%s%s%s" % (h[4:6], h[2:4], h[0:2])
+    except Exception:
+        return padrao
+
+
+def agrupar_palavras(palavras, max_chars=24):
+    grupos, atual = [], []
+    for p in palavras:
+        texto = " ".join(x["w"] for x in atual + [p])
+        pausa = atual and p["s"] - atual[-1]["e"] > 0.5
+        if atual and (len(texto) > max_chars or pausa):
+            grupos.append(atual)
+            atual = []
+        atual.append(p)
+        if p["w"].endswith((".", "!", "?")):
+            grupos.append(atual)
+            atual = []
+    if atual:
+        grupos.append(atual)
+    return grupos
+
+
+def _familia_fonte(arquivo, pasta_trabalho):
+    """Nome da família e se é negrito, lidos do arquivo da fonte; copia as fontes para uma pasta que o FFmpeg lê."""
+    import shutil
+    import capa
+    from PIL import ImageFont
+    legado = {"Poppins|1": "Poppins-Bold.ttf", "Poppins Medium|0": "Poppins-Medium.ttf", "Poppins|0": "Poppins-Regular.ttf"}
+    arquivo = legado.get(arquivo, arquivo) or "Poppins-Bold.ttf"
+    f = capa.achar_fonte(arquivo) or capa.achar_fonte("Poppins-Bold.ttf")
+    destino = pasta_trabalho / "fontes_ass"
+    destino.mkdir(exist_ok=True)
+    for orig in list(capa.FONTES.glob("*.ttf")) + ([f] if f else []):
+        try:
+            if not (destino / orig.name).exists():
+                shutil.copy2(orig, destino / orig.name)
+        except OSError:
+            pass
+    try:
+        fam, estilo = ImageFont.truetype(str(f), 20).getname()
+        return fam, (1 if "bold" in estilo.lower() else 0)
+    except Exception:
+        return "Poppins", 1
+
+
+def gerar_ass(palavras, destino: Path, cfg, total, nomes=None, texto_final=None, inicio_final=None):
+    """Arquivo de legenda estilizado: palavra por palavra com destaque, mais nome/cargo e texto da tela final.
+    Devolve None se não houver nada para desenhar."""
+    from render import tamanho
+    W, H = tamanho(cfg)
+    lg = cfg["legendas"]
+    mostrar_leg = lg.get("queimar_no_video", False) and lg.get("estilo", "destaque") == "destaque" and palavras
+    if not (mostrar_leg or nomes or texto_final):
+        return None
+    esc = W / 1080.0
+    tam = int(lg.get("ass_tamanho", 84) * esc)
+    margem = int(lg.get("ass_margem_inferior", 430 if H > W else 120))
+    if lg.get("posicao", "baixo") == "meio":
+        alin, margem = 5, 0
+    else:
+        alin = 2
+    cor_dest = _cor_ass(lg.get("cor_destaque", "#FFD400"))
+    cor_txt = _cor_ass(lg.get("cor_texto", "#FFFFFF"), "&H00FFFFFF")
+    fam, neg = _familia_fonte(lg.get("fonte"), destino.parent)
+    tam = int(tam * {"pequena": 0.8, "media": 1.0, "grande": 1.25}.get(lg.get("tamanho_ass", "media"), 1.0))
+    cab = [
+        "[Script Info]", "ScriptType: v4.00+", f"PlayResX: {W}", f"PlayResY: {H}", "ScaledBorderAndShadow: yes", "",
+        "[V4+ Styles]",
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, "
+        "Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+        f"Style: Leg,{fam},{tam},{cor_txt},{cor_txt},&H00000000,&H80000000,{neg},0,0,0,100,100,0,0,1,{max(3, int(5 * esc))},2,{alin},{int(60 * esc)},{int(60 * esc)},{margem},1",
+        f"Style: Nome,Poppins,{int(46 * esc)},&H00FFFFFF,&H00FFFFFF,&H00000000,&HB0000000,1,0,0,0,100,100,0,0,3,{int(14 * esc)},0,1,{int(70 * esc)},{int(70 * esc)},{int(300 * esc) if H > W else int(90 * esc)},1",
+        f"Style: Cargo,Poppins,{int(34 * esc)},&H00DDDDDD,&H00DDDDDD,&H00000000,&HB0000000,0,0,0,0,100,100,0,0,3,{int(12 * esc)},0,1,{int(70 * esc)},{int(70 * esc)},{int(236 * esc) if H > W else int(40 * esc)},1",
+        f"Style: Final,Poppins,{int(84 * esc)},{cor_dest},{cor_dest},&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,{max(4, int(6 * esc))},3,5,{int(80 * esc)},{int(80 * esc)},{int(H * 0.12)},1",
+        "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"]
+    ev = []
+    if mostrar_leg:
+        grupos = agrupar_palavras(palavras, lg.get("max_caracteres", 24))
+        for gi, g in enumerate(grupos):
+            limite = grupos[gi + 1][0]["s"] - 0.02 if gi + 1 < len(grupos) else g[-1]["e"] + 0.25
+            for k, p in enumerate(g):
+                ini = p["s"]
+                fim = g[k + 1]["s"] if k + 1 < len(g) else min(max(g[-1]["e"] + 0.2, ini + 0.3), limite)
+                fim = max(fim, ini + 0.12)
+                partes = []
+                for j, q in enumerate(g):
+                    w = _limpo(q["w"]).upper() if lg.get("maiusculas", False) else _limpo(q["w"])
+                    partes.append(("{\\c%s\\fscx108\\fscy108}%s{\\r}" % (cor_dest, w)) if j == k else w)
+                ev.append(f"Dialogue: 0,{_ass_t(ini)},{_ass_t(fim)},Leg,,0,0,0,,{' '.join(partes)}")
+    for (t0, t1, nome, cargo) in (nomes or []):
+        ev.append(f"Dialogue: 1,{_ass_t(t0)},{_ass_t(t1)},Nome,,0,0,0,,{{\\fad(250,250)}}{_limpo(nome)}")
+        if cargo:
+            ev.append(f"Dialogue: 1,{_ass_t(t0)},{_ass_t(t1)},Cargo,,0,0,0,,{{\\fad(250,250)}}{_limpo(cargo)}")
+    if texto_final and inicio_final is not None:
+        ev.append(f"Dialogue: 2,{_ass_t(inicio_final + 0.2)},{_ass_t(total)},Final,,0,0,0,,{{\\fad(300,0)}}{_limpo(texto_final)}")
+    destino.write_text("\n".join(cab + ev) + "\n", encoding="utf-8")
     return destino
 
 

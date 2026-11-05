@@ -65,7 +65,7 @@ async function criarJanela() {
     width: 1240, height: 860, minWidth: 900, minHeight: 640,
     title: "Gregio AutoEdit", backgroundColor: "#0e0e12", show: false,
     icon: path.join(__dirname, "icon.png"),
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, "preload.js") }
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false, preload: path.join(__dirname, "preload.js") }
   });
   janela.once("ready-to-show", () => janela.show());
   // permissões do navegador (câmera, microfone, localização...) ficam todas bloqueadas
@@ -100,6 +100,17 @@ function menu() {
 // ---------- atualização ----------
 let ultimaVerificacao = null;
 ipcMain.handle("versao", () => app.getVersion());
+// notificação do computador quando um vídeo fica pronto
+ipcMain.on("notificar", (_e, titulo, texto) => {
+  try {
+    const { Notification } = require("electron");
+    if (Notification.isSupported()) {
+      const n = new Notification({ title: titulo, body: texto, silent: false });
+      n.on("click", () => { if (janela) { if (janela.isMinimized()) janela.restore(); janela.show(); janela.focus(); } });
+      n.show();
+    }
+  } catch (e) { /* sem notificação, o aviso na tela continua */ }
+});
 ipcMain.handle("verificar-atualizacao", async () => {
   try { ultimaVerificacao = await atualizador.verificar(); return ultimaVerificacao; }
   catch (e) { return { atual: app.getVersion(), tem: false, erro: e.message }; }

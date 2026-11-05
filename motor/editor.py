@@ -55,6 +55,8 @@ class Progresso:
         d = {"fase": fase, "etapa": texto, "atual": atual, "total": total,
              "pct": round(min(99.0, feito * 100), 1), "segundos": round(time.time() - self.inicio)}
         print("  [%3.0f%%] %s %s" % (d["pct"], texto, ("%d/%d" % (atual, total)) if total else ""), flush=True)
+        if render.CANCELAR.is_set():
+            raise render.Cancelado()
         self.avisar(d)
 
 
@@ -172,6 +174,8 @@ def renderizar(nome, itens, roteiro, transicoes, descartados, musica, trabalho: 
     blocos_dir.mkdir(parents=True, exist_ok=True)
     nucleos = os.cpu_count() or 2
     paralelo = max(1, min(4, nucleos // 2))
+    if render.codec_video(cfg):   # chip de vídeo: poucas sessões ao mesmo tempo
+        paralelo = min(paralelo, 2)
     cfg["_threads"] = max(1, nucleos // paralelo)
 
     feitos = [0]
@@ -193,18 +197,47 @@ def renderizar(nome, itens, roteiro, transicoes, descartados, musica, trabalho: 
     fim_musica = inicios[-1] if roteiro and roteiro[-1]["tipo"] == "encerramento" else None
 
     prog("final", "Colocando a música e ajustando o volume", 1, 3)
+    realces, efeitos = _realces_e_efeitos(roteiro, transicoes, inicios, cfg)
+    inicio_m = ritmo.ponto_inicial(musica) if musica and cfg["audio"].get("musica_ponto_certo", True) else 0.0
+    ganho_m = (cfg.get("_musica_ganho_db") or 0.0)
     srt = exportar.gerar_srt(roteiro, inicios, trabalho / "legendas.srt", cfg["legendas"]["max_caracteres"]) \
         if cfg["legendas"]["gerar_srt"] else None
+    palavras = exportar.palavras_na_timeline(roteiro, inicios)
+    (trabalho / "legenda.json").write_text(json.dumps(palavras, ensure_ascii=False), encoding="utf-8")
+    nomes_cfg = cfg.get("_nomes") or {}
+    nomes = []
+    for k, bl in enumerate(roteiro):
+        n = nomes_cfg.get(bl["item"]["path"].name) if bl["tipo"] == "fala" and not bl.get("gancho") else None
+        if n and n.get("nome"):
+            nomes.append((inicios[k] + 0.3, inicios[k] + min(4.0, bl.get("duracao_render", 4.0)), n["nome"], n.get("cargo", "")))
+    texto_final = (cfg.get("encerramento", {}).get("texto") or "").strip()
+    inicio_final = inicios[-1] if roteiro and roteiro[-1]["tipo"] == "encerramento" else None
+    total_video = render.duracao(sem_musica)
+    ass = exportar.gerar_ass(palavras, trabalho / "legenda.ass", cfg, total_video, nomes,
+                             texto_final or None, inicio_final)
+    (trabalho / "audio.json").write_text(json.dumps({
+        "inicios": inicios, "fim_musica": fim_musica, "realces": realces,
+        "efeitos": [[str(a), t] for a, t in efeitos],
+        "nomes": nomes, "texto_final": texto_final, "inicio_final": inicio_final}), encoding="utf-8")
     final = trabalho / f"{nome}.mp4"
-    render.finalizar(sem_musica, musica, srt, final, cfg, fim_musica)
+    render.finalizar(sem_musica, musica, srt, final, cfg, fim_musica, realces, efeitos, inicio_m, ganho_m, ass)
 
     prog("final", "Criando a capa", 2, 3)
-    arq_capa = None
+    arq_capa, capas, capas_info = None, [], []
     try:
         fonte = next((b["arquivo"] for b in roteiro if b["tipo"] == "fala"), roteiro[0]["arquivo"])
-        foto, rosto = capa.melhor_quadro(fonte, trabalho / "capa_foto.png")
-        if foto:
-            arq_capa, _ = capa.gerar(foto, nome, trabalho / f"CAPA - {nome}.jpg", rosto, titulo=titulo, logo=logo)
+        cp = cfg.get("capa", {})
+        quadros = capa.melhor_quadro(fonte, trabalho / "capa_foto.png", 3 if cp.get("tres_opcoes", True) else 1)
+        if not isinstance(quadros, list):
+            quadros = [quadros] if quadros and quadros[0] else []
+        for i, (foto, rosto) in enumerate(quadros):
+            dest = trabalho / (f"CAPA - {nome}.jpg" if i == 0 else f"CAPA - {nome} ({i + 1}).jpg")
+            capa.gerar(foto, nome, dest, rosto, titulo=titulo, logo=logo, estilo=cp.get("estilo", "classico"),
+                       fonte=cp.get("fonte", "Poppins-Bold.ttf"), posicao=cp.get("posicao", "baixo"),
+                       cor=cp.get("cor", "#FFFFFF"), margem_segura=cp.get("margem_segura", True))
+            capas.append(dest)
+            capas_info.append({"foto": str(foto), "rosto": [int(v) for v in rosto] if rosto is not None else None})
+        arq_capa = capas[0] if capas else None
     except Exception:
         traceback.print_exc()
 
@@ -216,14 +249,83 @@ def renderizar(nome, itens, roteiro, transicoes, descartados, musica, trabalho: 
             pacote = exportar.montar_pacote(nome, trabalho, final, srt, xml, rel, roteiro, musica)
         except Exception:
             traceback.print_exc()
-    return {"video": final, "capa": arq_capa, "legenda": srt, "pacote": pacote,
-            "duracao": render.duracao(final)}
+    dur_final = render.duracao(final)
+    return {"video": final, "capa": arq_capa, "capas": capas, "capas_info": capas_info, "legenda": srt, "pacote": pacote,
+            "duracao": dur_final, "resumo": _resumo(itens, roteiro, dur_final, cfg)}
+
+
+def _resumo(itens, roteiro, dur_final, cfg):
+    """Números para o aviso na tela: tamanho, quanto de fala foi cortado e se o vídeo está fora do ideal."""
+    vistos, bruto = set(), 0.0
+    for b in roteiro:   # tempo gravado dos takes de fala que entraram, antes de tirar pausas e erros
+        if b["tipo"] == "fala" and not b.get("gancho") and id(b["item"]) not in vistos:
+            vistos.add(id(b["item"]))
+            bruto += b["item"].get("fim_util", b["item"]["duracao"]) - b["item"].get("ini_util", 0.0)
+    mantido = sum(t["fim"] - t["ini"] for b in roteiro if b["tipo"] == "fala" and not b.get("gancho") for t in b["trechos"])
+    avisos = []
+    if dur_final > 90:
+        avisos.append("Passou de 90 segundos. Reels mais curtos costumam render mais.")
+    if dur_final < 15:
+        avisos.append("Ficou muito curto (menos de 15 segundos).")
+    elif dur_final < cfg["selecao"].get("duracao_min_final_seg", 30) - 1:
+        avisos.append("Ficou abaixo de %d segundos: faltou material." % cfg["selecao"].get("duracao_min_final_seg", 30))
+    return {"duracao": round(dur_final, 1), "fala_original": round(bruto, 1), "fala_mantida": round(mantido, 1),
+            "cortado": round(max(0.0, bruto - mantido), 1), "cenas": len(roteiro), "avisos": avisos}
+
+
+def _realces_e_efeitos(roteiro, transicoes, inicios, cfg):
+    """Trechos só com imagem (música sobe) e instantes de transição (efeito sonoro opcional)."""
+    realces = []
+    for k, b in enumerate(roteiro):
+        if b["tipo"] == "local" and cfg["audio"]["som_ambiente_takes_local_db"] <= -90:
+            a, f = inicios[k], inicios[k] + b.get("duracao_render", 0)
+            if realces and abs(realces[-1][1] - a) < 0.8:
+                realces[-1][1] = f
+            else:
+                realces.append([a, f])
+    efeitos = []
+    pasta = cfg.get("_pasta_efeitos")
+    if pasta and cfg["audio"].get("efeitos_transicao", False) and Path(pasta).is_dir():
+        arqs = sorted(p for p in Path(pasta).iterdir() if p.suffix.lower() in AUDIO_EXT)
+        if arqs:
+            import random
+            for k, t in enumerate(transicoes):
+                if t == "desfoque":
+                    efeitos.append((random.choice(arqs), max(0.0, inicios[k + 1] - 0.15)))
+    return realces, efeitos
+
+
+def refazer_final(nome, trabalho: Path, cfg, musica, ganho_musica_db=0.0, palavras=None):
+    """Refaz só o áudio e a legenda em cima da montagem pronta (segundos, sem renderizar as cenas de novo).
+    Serve para trocar a música e para corrigir uma palavra da legenda."""
+    d = json.loads((trabalho / "audio.json").read_text(encoding="utf-8"))
+    cfg = copy.deepcopy(cfg)
+    if palavras is not None:
+        (trabalho / "legenda.json").write_text(json.dumps(palavras, ensure_ascii=False), encoding="utf-8")
+    else:
+        pj = trabalho / "legenda.json"
+        palavras = json.loads(pj.read_text(encoding="utf-8")) if pj.exists() else []
+    srt = None
+    if palavras and cfg["legendas"].get("gerar_srt", True):
+        srt = exportar.srt_de_palavras(palavras, trabalho / "legendas.srt", cfg["legendas"]["max_caracteres"])
+    total = render.duracao(trabalho / "montagem.mp4")
+    ass = exportar.gerar_ass(palavras, trabalho / "legenda.ass", cfg, total,
+                             [tuple(n) for n in d.get("nomes", [])], d.get("texto_final") or None, d.get("inicio_final"))
+    inicio_m = ritmo.ponto_inicial(musica) if musica and cfg["audio"].get("musica_ponto_certo", True) else 0.0
+    final = trabalho / f"{nome}.mp4"
+    render.finalizar(trabalho / "montagem.mp4", musica, srt, final, cfg, d.get("fim_musica"), d.get("realces"),
+                     [(Path(a), t) for a, t in d.get("efeitos", [])], inicio_m, ganho_musica_db, ass)
+    return final
+
+
+refazer_audio = refazer_final
 
 
 def editar(nome, videos, trabalho: Path, cfg, musica=None, encerramento=None, avisar=None, logo=None, titulo=None,
            cortes=None):
     """Faz tudo: análise, montagem e render. Devolve os arquivos e o estado."""
     trabalho.mkdir(parents=True, exist_ok=True)
+    render.CANCELAR.clear()
     prog = Progresso(avisar)
     prog("analise", "Preparando", 0, len(videos))
     itens, roteiro, transicoes, descartados = planejar(videos, musica, trabalho, cfg, encerramento, prog, cortes)

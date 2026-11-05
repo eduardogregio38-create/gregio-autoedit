@@ -24,6 +24,8 @@ import hmac
 import secrets
 import uuid
 import webbrowser
+import zipfile
+import platform
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -36,6 +38,9 @@ import gdrive  # noqa: E402
 
 NOME_APP = "Gregio AutoEdit"
 VERSAO = "2.0"
+AJUDA_EMAIL = "eduardogregio38@gmail.com"   # (não usado mais no botão; fica de reserva)
+AJUDA_WHATSAPP = "5545988280533"             # contato do botão "Preciso de ajuda"
+AJUDA_WHATSAPP_TXT = "+55 45 98828-0533"
 PORTA = int(os.environ.get("GREGIO_PORTA", "8765"))
 # Chave desta sessão: só a janela do app (que recebe a chave ao abrir) consegue falar com o motor.
 # Sites abertos no navegador não sabem a chave, então não conseguem pedir nada a ele.
@@ -94,10 +99,137 @@ MOTIVOS = {
     "ordem": {"texto": "Ordem das cenas"},
 }
 
+
+# ---------------- PREFERÊNCIAS (tela de ajustes avançados) E RECEITAS ----------------
+
+OP_CAPA_ESTILO = [("classico", "Clássico (sombra)"), ("faixa", "Faixa escura atrás do título"), ("cor", "Letras coloridas")]
+PREFS = [
+    {"k": "selecao.ritmo_fala", "tipo": "escolha", "grupo": "Cortes", "nome": "Ritmo da fala",
+     "op": [("natural", "Natural"), ("dinamico", "Dinâmico"), ("seco", "Bem seco")]},
+    {"k": "selecao.ordem_meio", "tipo": "escolha", "grupo": "Cortes", "nome": "Ordem das falas do meio",
+     "op": [("sortear", "Sortear a cada edição"), ("gravacao", "Seguir a ordem da gravação")]},
+    {"k": "selecao.gancho", "tipo": "liga", "grupo": "Cortes", "nome": "Abrir com a frase mais forte (gancho nos primeiros segundos)"},
+    {"k": "selecao.tirar_recomecos", "tipo": "liga", "grupo": "Cortes", "nome": "Tirar erro e recomeço de frase dentro do mesmo take"},
+    {"k": "selecao.tirar_claquete", "tipo": "liga", "grupo": "Cortes", "nome": "Tirar \"gravando\", \"valendo\" e \"corta\" do começo e do fim"},
+    {"k": "selecao.cortes_precisos", "tipo": "liga", "grupo": "Cortes", "nome": "Cortar no ponto mais silencioso (sem comer o fim das palavras)"},
+    {"k": "audio.nivel_ruido", "tipo": "escolha", "grupo": "Áudio", "nome": "Redução de ruído",
+     "op": [("auto", "Automático (pelo ruído de cada take)"), ("suave", "Suave"), ("medio", "Média"), ("forte", "Forte")]},
+    {"k": "audio.filtro_vento", "tipo": "liga", "grupo": "Áudio", "nome": "Filtro de vento em gravações ao ar livre"},
+    {"k": "audio.igualar_volume", "tipo": "liga", "grupo": "Áudio", "nome": "Igualar o volume entre os takes"},
+    {"k": "audio.musica_alta_sem_fala", "tipo": "liga", "grupo": "Áudio", "nome": "Música mais alta nas partes só com imagem"},
+    {"k": "audio.efeitos_transicao", "tipo": "liga", "grupo": "Áudio", "nome": "Efeito sonoro nas transições (usa os sons da pasta Efeitos)"},
+    {"k": "video.melhorar_escuro", "tipo": "liga", "grupo": "Imagem", "nome": "Clarear takes escuros e reduzir granulação"},
+    {"k": "video.nitidez_final", "tipo": "liga", "grupo": "Imagem", "nome": "Nitidez leve depois de reduzir 4K para 1080p"},
+    {"k": "video.estabilizar", "tipo": "liga", "grupo": "Imagem", "nome": "Estabilização leve nas imagens do local (deixa a edição mais lenta)"},
+    {"k": "legendas.queimar_no_video", "tipo": "liga", "grupo": "Legenda", "nome": "Legenda dentro do vídeo"},
+    {"k": "legendas.estilo", "tipo": "escolha", "grupo": "Legenda", "nome": "Estilo da legenda",
+     "op": [("destaque", "Palavra por palavra, com destaque"), ("simples", "Simples")]},
+    {"k": "legendas.posicao", "tipo": "escolha", "grupo": "Legenda", "nome": "Posição da legenda",
+     "op": [("baixo", "Embaixo"), ("meio", "No meio")]},
+    {"k": "legendas.cor_destaque", "tipo": "cor", "grupo": "Legenda", "nome": "Cor da palavra em destaque"},
+    {"k": "legendas.fonte", "tipo": "escolha", "grupo": "Legenda", "nome": "Fonte da legenda", "fonte": True, "op": []},
+    {"k": "legendas.tamanho_ass", "tipo": "escolha", "grupo": "Legenda", "nome": "Tamanho da legenda",
+     "op": [("pequena", "Pequena"), ("media", "Média"), ("grande", "Grande")]},
+    {"k": "legendas.cor_texto", "tipo": "cor", "grupo": "Legenda", "nome": "Cor do texto da legenda"},
+    {"k": "legendas.maiusculas", "tipo": "liga", "grupo": "Legenda", "nome": "Legenda em letras maiúsculas"},
+    {"k": "capa.tres_opcoes", "tipo": "liga", "grupo": "Capa", "nome": "Gerar 3 opções de capa para escolher"},
+    {"k": "capa.estilo", "tipo": "escolha", "grupo": "Capa", "nome": "Estilo do título", "op": OP_CAPA_ESTILO},
+    {"k": "capa.posicao", "tipo": "escolha", "grupo": "Capa", "nome": "Posição do título",
+     "op": [("baixo", "Embaixo"), ("meio", "No meio"), ("cima", "Em cima")]},
+    {"k": "capa.fonte", "tipo": "escolha", "grupo": "Capa", "nome": "Fonte do título", "fonte": True, "op": []},
+    {"k": "capa.cor", "tipo": "cor", "grupo": "Capa", "nome": "Cor do título"},
+    {"k": "capa.margem_segura", "tipo": "liga", "grupo": "Capa", "nome": "Manter o título na área segura (grade do perfil e botões do Reels)"},
+    {"k": "encerramento.texto", "tipo": "texto", "grupo": "Tela final", "nome": "Texto sobre a tela final (ex.: Siga, Matrículas abertas)"},
+    {"k": "aceleracao", "tipo": "escolha", "grupo": "Sistema", "nome": "Renderização",
+     "op": [("auto", "Usar o chip de vídeo do computador, se tiver"), ("nenhuma", "Só o processador")]},
+    {"k": "limpar_apos_aprovar", "tipo": "liga", "grupo": "Sistema", "nome": "Apagar arquivos de trabalho depois de aprovar (libera espaço)"},
+    {"k": "limpar_takes_apos_aprovar", "tipo": "liga", "grupo": "Sistema", "nome": "Apagar também os takes copiados para o app (não dá mais para refazer)"},
+    {"k": "vocabulario", "tipo": "lista", "grupo": "Transcrição", "nome": "Vocabulário: nomes, marcas e cursos que o app deve acertar (um por linha)"},
+]
+PADROES_EXTRA = {"limpar_apos_aprovar": True, "limpar_takes_apos_aprovar": False, "vocabulario": []}
+RECEITAS = {
+    "padrao": {"nome": "Padrão", "cfg": {}},
+    "bastidores": {"nome": "Bastidores", "cfg": {"selecao": {"ritmo_fala": "dinamico", "gancho": True},
+                                                 "audio": {"volume_musica_db": -14}}},
+    "entrevista": {"nome": "Entrevista", "cfg": {"selecao": {"ritmo_fala": "natural"}, "audio": {"nivel_ruido": "medio"},
+                                                  "legendas": {"queimar_no_video": True}}},
+    "depoimento": {"nome": "Depoimento", "cfg": {"selecao": {"ritmo_fala": "natural", "gancho": False},
+                                                 "audio": {"volume_musica_db": -22}, "capa": {"estilo": "faixa"}}},
+}
+
+
+def _aninhar(chave, valor, d):
+    partes = chave.split(".")
+    for p in partes[:-1]:
+        d = d.setdefault(p, {})
+    d[partes[-1]] = valor
+
+
+def opcoes_fonte():
+    import capa
+    return [(a, n) for a, n in capa.listar_fontes()]
+
+
+def prefs_atuais(ap=None):
+    import editor
+    base = editor.carregar_config()
+    ap = ap or aprendizado()
+    out = []
+    for m in PREFS:
+        v = ap.get("prefs", {}).get(m["k"])
+        if v is None:
+            if "." in m["k"]:
+                a, b = m["k"].split(".")
+                v = base.get(a, {}).get(b)
+            else:
+                v = PADROES_EXTRA.get(m["k"], base.get(m["k"]))
+        ops = opcoes_fonte() if m.get("fonte") else m.get("op", [])
+        out.append(dict(m, valor=v, op=[list(o) for o in ops]))
+    return out
+
+
 TRAVA = threading.Lock()
 FILA = []
 EVENTO = threading.Event()
 ATUAL = {"id": None}
+LOG = DADOS / "app.log"
+
+
+class _Tee:
+    """Copia tudo que o app escreve na tela para um arquivo de registro (usado no relatório de erro)."""
+    def __init__(self, orig):
+        self.orig = orig
+
+    def write(self, t):
+        try:
+            if self.orig:
+                self.orig.write(t)
+            with open(LOG, "a", encoding="utf-8", errors="replace") as f:
+                f.write(t)
+        except Exception:
+            pass
+        return len(t)
+
+    def flush(self):
+        try:
+            if self.orig:
+                self.orig.flush()
+        except Exception:
+            pass
+
+    def __getattr__(self, k):
+        return getattr(self.orig, k)
+
+
+def _ligar_log():
+    try:
+        if LOG.exists() and LOG.stat().st_size > 2_000_000:
+            dados = LOG.read_bytes()[-500_000:]
+            LOG.write_bytes(dados)
+    except Exception:
+        pass
+    sys.stdout = _Tee(sys.stdout)
+    sys.stderr = _Tee(sys.stderr)
 
 
 def agora():
@@ -190,7 +322,7 @@ def depois_do_login():
 
 # ---------------- APRENDIZADO ----------------
 
-AP_VAZIO = {"ajustes": {}, "historico": [], "musicas_evitar": [], "musicas_boas": []}
+AP_VAZIO = {"ajustes": {}, "historico": [], "musicas_evitar": [], "musicas_boas": [], "prefs": {}}
 AP_ARQ = DADOS / "aprendizado.json"
 AP_DRIVE = "_gregio_aprendizado.json"
 
@@ -284,16 +416,62 @@ def aprender(projeto, aprovado, motivos=(), nota=""):
 
 # ---------------- MÚSICAS ----------------
 
+META_MUS = DADOS / "musicas_meta.json"
+ALVO_BPM = {"animada": 128, "emocionante": 100, "inspiradora": 92, "leve": 90, "agro": 100, "corporativa": 108}
+
+
+def meta_musicas():
+    return ler(META_MUS, {})
+
+
+def salvar_meta_musica(estilo, nome, **campos):
+    with TRAVA:
+        m = meta_musicas()
+        m.setdefault(estilo + "/" + nome, {}).update(campos)
+        gravar(META_MUS, m)
+
+
+def analisar_musica(estilo, nome):
+    """Mede o volume (para igualar as faixas) e o andamento (BPM) de uma música recém-adicionada."""
+    import re as _re
+    f = MUSICAS / estilo / nome
+    try:
+        r = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-t", "120", "-i", str(f), "-af",
+                            "ebur128=framelog=quiet", "-f", "null", "-"], capture_output=True, text=True,
+                           encoding="utf-8", errors="replace")
+        m = _re.findall(r"I:\s*(-?\d+(?:\.\d+)?)\s*LUFS", r.stderr)
+        campos = {}
+        if m:
+            campos["ganho_db"] = round(max(-12.0, min(12.0, -14.0 - float(m[-1]))), 1)
+        import ritmo
+        _, bpm = ritmo.batidas(f)
+        campos["bpm"] = round(bpm) if bpm else 0
+        salvar_meta_musica(estilo, nome, **campos)
+    except Exception:
+        traceback.print_exc()
+
+
 def lista_musicas():
     out = []
+    meta = meta_musicas()
     for estilo in ESTILOS[1:]:
         for f in sorted((MUSICAS / estilo).glob("*")):
             if f.suffix.lower() in AUDIO_EXT:
-                out.append({"estilo": estilo, "nome": f.name, "caminho": str(f)})
+                mm = meta.get(estilo + "/" + f.name, {})
+                out.append({"estilo": estilo, "nome": f.name, "caminho": str(f),
+                            "letra": bool(mm.get("letra")), "bpm": mm.get("bpm", 0), "ganho_db": mm.get("ganho_db", 0.0)})
     return out
 
 
+def ganho_da_musica(caminho):
+    if not caminho:
+        return 0.0
+    p = Path(caminho)
+    return float(meta_musicas().get(p.parent.name + "/" + p.name, {}).get("ganho_db", 0.0))
+
+
 def escolher_musica(estilo, evitar_tambem=()):
+    import math
     ap = aprendizado()
     todas = lista_musicas()
     pool = [m for m in todas if m["estilo"] == estilo] if estilo and estilo != "automatico" else todas
@@ -302,10 +480,18 @@ def escolher_musica(estilo, evitar_tambem=()):
     proibidas = set(ap["musicas_evitar"]) | set(evitar_tambem)
     boas = set(ap["musicas_boas"])
     candidatas = [m for m in pool if m["nome"] not in proibidas] or [m for m in pool if m["nome"] not in evitar_tambem] or pool
+    sem_letra = [m for m in candidatas if not m["letra"]]   # música cantada atrapalha a fala
+    candidatas = sem_letra or candidatas
     if not candidatas:
         return None
-    pesos = [3 if m["nome"] in boas else 1 for m in candidatas]
-    return Path(random.choices(candidatas, weights=pesos)[0]["caminho"])
+
+    def peso(m):
+        w = 3.0 if m["nome"] in boas else 1.0
+        alvo = ALVO_BPM.get(m["estilo"])
+        if alvo and m["bpm"]:   # prefere o andamento que combina com o estilo
+            w *= 0.4 + math.exp(-0.5 * ((m["bpm"] - alvo) / 28.0) ** 2)
+        return w
+    return Path(random.choices(candidatas, weights=[peso(m) for m in candidatas])[0]["caminho"])
 
 
 # ---------------- PROJETOS ----------------
@@ -375,14 +561,71 @@ def enfileirar(pid):
 
 # ---------------- EDIÇÃO (fila, um vídeo por vez) ----------------
 
-def config_edicao():
+def config_edicao(p=None):
     import editor
     ap = aprendizado()
-    return editor.carregar_config(ap["ajustes"])
+    cfg = editor.carregar_config(ap["ajustes"])
+    prefs = {}
+    for k, v in ap.get("prefs", {}).items():
+        if k in {m["k"] for m in PREFS}:
+            _aninhar(k, v, prefs)
+    editor._mesclar(cfg, prefs)
+    rec = RECEITAS.get((p or {}).get("receita") or "padrao", RECEITAS["padrao"])["cfg"]
+    # a receita vale quando a pessoa não mudou aquele ajuste na tela de ajustes
+    editor._mesclar(cfg, _sem_prefs(rec, prefs))
+    if isinstance(cfg.get("vocabulario"), str):
+        cfg["vocabulario"] = [l.strip() for l in cfg["vocabulario"].splitlines() if l.strip()]
+    cfg["_pasta_efeitos"] = str(PASTA / "Efeitos")
+    cfg["_nomes"] = (p or {}).get("nomes") or {}
+    return cfg
+
+
+def _sem_prefs(rec, prefs):
+    out = {}
+    for a, v in rec.items():
+        if isinstance(v, dict):
+            sub = {k: x for k, x in v.items() if k not in prefs.get(a, {})}
+            if sub:
+                out[a] = sub
+        else:
+            out[a] = v
+    return out
+
+
+def mensagem_amigavel(e):
+    """Traduz o erro técnico para o que a pessoa precisa saber e fazer."""
+    import analise
+    if isinstance(e, analise.ErroUsuario):
+        return str(e)
+    t = str(e)
+    if isinstance(e, OSError) and getattr(e, "errno", None) == 28:
+        return "O computador ficou sem espaço em disco. Libere espaço (apague vídeos antigos) e tente de novo."
+    if "FFmpeg falhou" in t:
+        return ("Não consegui processar um dos vídeos. Confira se ele abre em outro player. Se abrir, tente de novo; "
+                "se repetir, use o botão Ajuda para me mandar o relatório.")
+    if "Nenhum take aproveitável" in t:
+        return "Nenhum take aproveitável. Confira se os vídeos têm imagem e som e se não foram cortados demais."
+    if "faster_whisper" in t or "whisper" in t.lower():
+        return "Não consegui carregar o reconhecimento de fala. Reinicie o app e tente de novo."
+    return "Algo deu errado na edição. Tente de novo; se repetir, use o botão Ajuda para enviar o relatório. (%s)" % t[:160]
+
+
+def espaco_suficiente(takes):
+    try:
+        usado = sum(f.stat().st_size for f in takes.iterdir() if f.is_file())
+        livre = shutil.disk_usage(PASTA).free
+        precisa = max(2 * 1024 ** 3, int(usado * 1.5))
+        if livre < precisa:
+            return "Pouco espaço no disco: faltam uns %s livres para editar. Apague vídeos antigos e tente de novo." % \
+                   ("%.1f GB" % ((precisa - livre) / 1e9))
+    except Exception:
+        pass
+    return None
 
 
 def editar_projeto(pid):
     import editor
+    import render
     p = ler_projeto(pid)
     if not p:
         return
@@ -393,7 +636,11 @@ def editar_projeto(pid):
         shutil.rmtree(trabalho / velho, ignore_errors=True)
     videos, musica_projeto, encerramento_projeto = editor.separar_arquivos(takes)
     if not videos:
-        atualizar(pid, estado="erro", erro="Nenhum vídeo neste projeto.")
+        atualizar(pid, estado="erro", erro="Nenhum vídeo neste projeto. Se você apagou os takes para liberar espaço, envie os vídeos de novo.")
+        return
+    aviso = espaco_suficiente(takes)
+    if aviso:
+        atualizar(pid, estado="erro", erro=aviso)
         return
     musica = musica_projeto
     if not musica and p.get("estilo") != "nenhuma":
@@ -405,25 +652,164 @@ def editar_projeto(pid):
         encerramento = enc
     logo = DADOS / "logo.png"
     atualizar(pid, estado="editando", etapa="Começando", pct=0, inicio_ts=time.time(), erro=None,
-              musica_nome=musica.name if musica else None)
+              musica_nome=musica.name if musica else None, musica_arq=str(musica) if musica else None)
 
     def avisar(d):
         atualizar(pid, etapa=d["etapa"], pct=d["pct"], atual=d["atual"], total=d["total"])
 
     try:
-        cfg = config_edicao()
+        cfg = config_edicao(p)
         if p.get("modo") == "entrevista":
             cfg["entrevista"] = True
+        cfg["_musica_ganho_db"] = ganho_da_musica(musica)
         nome = nome_arquivo(p["nome"])
         r = editor.editar(nome, videos, trabalho, cfg, musica, encerramento, avisar,
                           logo=logo if logo.exists() else None, titulo=p.get("titulo") or None,
                           cortes=p.get("cortes") or None)
         arquivos = {k: str(v) for k, v in r.items() if k in ("video", "capa", "legenda", "pacote") and v}
         atualizar(pid, estado="previa", etapa="Pronto para você ver", pct=100, arquivos=arquivos,
-                  duracao=round(r["duracao"], 1), segundos=r["segundos"], fim_ts=time.time())
+                  duracao=round(r["duracao"], 1), segundos=r["segundos"], fim_ts=time.time(),
+                  resumo=r.get("resumo"), capas_info=r.get("capas_info", []), rev=int(time.time()))
+        notificar_pronto(p["nome"])
+    except render.Cancelado:
+        atualizar(pid, estado="erro", erro="Edição cancelada. Use \"Tentar de novo\" quando quiser.")
     except Exception as e:
         traceback.print_exc()
-        atualizar(pid, estado="erro", erro=str(e)[:400])
+        atualizar(pid, estado="erro", erro=mensagem_amigavel(e))
+
+
+def notificar_pronto(nome):
+    """Sinal para a janela do app mostrar a notificação do computador."""
+    with TRAVA:
+        AVISOS.append({"titulo": "Vídeo pronto", "texto": "\"%s\" está esperando a sua aprovação." % nome, "ts": time.time()})
+        del AVISOS[:-20]
+
+
+AVISOS = []
+
+
+# ---------------- CAPA, LEGENDA E MÚSICA DEPOIS DE PRONTO ----------------
+
+def _estado_ocupado(pid, etapa):
+    atualizar(pid, estado="editando", etapa=etapa, pct=40, inicio_ts=time.time(), atual=0, total=0)
+
+
+def refazer_capa(pid, foto, rosto=None, titulo=None, estilo=None, posicao=None, cor=None, fonte=None):
+    import capa
+    p = ler_projeto(pid)
+    cfg = config_edicao(p)
+    cp = cfg.get("capa", {})
+    trabalho = dir_projeto(pid) / "trabalho"
+    nome = nome_arquivo(p["nome"])
+    dest = trabalho / ("CAPA - %s.jpg" % nome)
+    logo = DADOS / "logo.png"
+    capa.gerar(Path(foto), nome, dest, tuple(rosto) if rosto else None, titulo=(titulo or p.get("titulo") or None),
+               logo=logo if logo.exists() else None, estilo=estilo or cp.get("estilo", "classico"),
+               fonte=fonte or cp.get("fonte", "Poppins-Bold.ttf"), posicao=posicao or cp.get("posicao", "baixo"),
+               cor=cor or cp.get("cor", "#FFFFFF"), margem_segura=cp.get("margem_segura", True))
+    arq = dict(p.get("arquivos") or {})
+    arq["capa"] = str(dest)
+    atualizar(pid, arquivos=arq, rev=int(time.time() * 1000), titulo=titulo if titulo is not None else p.get("titulo"))
+    return dest
+
+
+def foto_do_take(pid, take, tempo, destino):
+    """Um quadro do take escolhido, no tamanho da capa (preenchendo a tela)."""
+    import analise
+    import render
+    f = dir_projeto(pid) / "takes" / Path(take).name
+    if not f.exists():
+        raise ValueError("Take não encontrado.")
+    info = analise.sondar(f)
+    pre = render._tonemap() if info.get("hdr") else ""
+    t = min(max(float(tempo), 0.0), max(info["duracao"] - 0.1, 0.0))
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", "%.2f" % t, "-i", str(f), "-frames:v", "1", "-vf",
+                    pre + "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920", str(destino)],
+                   capture_output=True, check=True)
+    return destino
+
+
+def foto_de_imagem(origem, destino):
+    from PIL import Image, ImageOps
+    img = ImageOps.exif_transpose(Image.open(origem)).convert("RGB")
+    ImageOps.fit(img, (1080, 1920), Image.LANCZOS).save(destino)
+    return destino
+
+
+def refazer_final_em_segundo_plano(pid, etapa, musica=None, palavras=None):
+    """Troca a música e/ou corrige a legenda sem renderizar as cenas de novo."""
+    import editor
+
+    def tarefa():
+        p = ler_projeto(pid)
+        try:
+            _estado_ocupado(pid, etapa)
+            cfg = config_edicao(p)
+            m = musica if musica is not None else (Path(p["musica_arq"]) if p.get("musica_arq") else None)
+            if m is not None and not Path(m).exists():
+                m = None
+            editor.refazer_final(nome_arquivo(p["nome"]), dir_projeto(pid) / "trabalho", cfg, m,
+                                 ganho_da_musica(m), palavras)
+            campos = {"estado": "previa", "etapa": "Pronto para você ver", "pct": 100, "rev": int(time.time() * 1000)}
+            if musica is not None:
+                campos.update(musica_nome=Path(musica).name, musica_arq=str(musica))
+            atualizar(pid, **campos)
+        except Exception as e:
+            traceback.print_exc()
+            atualizar(pid, estado="previa", etapa="Pronto para você ver", pct=100, erro=None)
+            AVISOS.append({"titulo": "Não deu certo", "texto": mensagem_amigavel(e), "ts": time.time(), "erro": True})
+    threading.Thread(target=tarefa, daemon=True).start()
+
+
+def limpar_trabalho(pid):
+    """Depois de aprovar: apaga os arquivos grandes de trabalho (e, se a pessoa quiser, os takes copiados)."""
+    try:
+        ap = aprendizado()
+        if not ap.get("prefs", {}).get("limpar_apos_aprovar", True):
+            return
+        pasta = dir_projeto(pid)
+        t = pasta / "trabalho"
+        shutil.rmtree(t / "blocos", ignore_errors=True)
+        for nome in ("montagem.mp4",):
+            (t / nome).unlink(missing_ok=True)
+        if ap.get("prefs", {}).get("limpar_takes_apos_aprovar", False):
+            shutil.rmtree(pasta / "takes", ignore_errors=True)
+    except Exception:
+        traceback.print_exc()
+
+
+def estatisticas():
+    ps = todos_projetos()
+    prontos = [p for p in ps if p.get("estado") == "pronto"]
+    ap = aprendizado()
+    aprov = sum(1 for h in ap["historico"] if h.get("projeto") and h.get("aprovado"))
+    reprov = sum(1 for h in ap["historico"] if h.get("projeto") and not h.get("aprovado"))
+    seg = [p.get("segundos") or 0 for p in ps if p.get("segundos")]
+    return {"videos": len(ps), "aprovados": len(prontos), "tempo_edicao_seg": sum(seg),
+            "media_edicao_seg": round(sum(seg) / len(seg)) if seg else 0,
+            "taxa_aprovacao": round(100 * aprov / (aprov + reprov)) if aprov + reprov else None,
+            "reprovacoes": reprov, "segundos_de_video": round(sum(p.get("duracao") or 0 for p in prontos))}
+
+
+def gerar_relatorio():
+    """Zip com versão, sistema, registro do app e resumo dos projetos (sem vídeos), para me mandar."""
+    pasta = PASTA / "Relatórios"
+    pasta.mkdir(parents=True, exist_ok=True)
+    f = pasta / ("relatorio-" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + ".zip")
+    with zipfile.ZipFile(f, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("info.txt", "Gregio AutoEdit %s\nSistema: %s %s\nPython: %s\nEspaço livre: %.1f GB\nGerado em: %s\n" % (
+            VERSAO, platform.system(), platform.release(), platform.python_version(),
+            shutil.disk_usage(PASTA).free / 1e9, agora()))
+        if LOG.exists():
+            z.writestr("registro.txt", LOG.read_bytes()[-400_000:].decode("utf-8", "replace"))
+        resumo = [{k: p.get(k) for k in ("nome", "estado", "erro", "modo", "n_takes", "duracao", "segundos", "criado",
+                                         "etapa", "resumo")} for p in todos_projetos()[:15]]
+        z.writestr("projetos.json", json.dumps(resumo, ensure_ascii=False, indent=1))
+        for p in todos_projetos()[:3]:
+            e = dir_projeto(p["id"]) / "trabalho" / "estado.json"
+            if e.exists() and e.stat().st_size < 3_000_000:
+                z.write(e, "estado-%s.json" % p["id"])
+    return f
 
 
 def trabalhador():
@@ -487,10 +873,12 @@ def aprovar_e_enviar(pid):
             enviado[0] += f.stat().st_size
         atualizar(pid, estado="pronto", etapa="No seu Drive", pct=100, drive_link=gdrive.link_pasta(pasta),
                   aprovado_em=agora())
+        limpar_trabalho(pid)
     except Exception as e:
         traceback.print_exc()
         atualizar(pid, estado="pronto", etapa="Salvo no computador", pct=100,
                   erro_drive="Não consegui enviar ao Drive: %s" % str(e)[:200])
+        limpar_trabalho(pid)
 
 
 # ---------------- SERVIDOR HTTP ----------------
@@ -505,7 +893,10 @@ def visao(p):
     """O que a tela precisa de cada projeto."""
     v = {k: p.get(k) for k in ("id", "nome", "titulo", "estilo", "estado", "etapa", "pct", "atual", "total",
                                  "erro", "erro_drive", "duracao", "segundos", "drive_link", "criado",
-                                 "aprovado_em", "musica_nome", "n_takes", "modo")}
+                                 "aprovado_em", "musica_nome", "n_takes", "modo", "resumo", "receita", "rev")}
+    v["n_capas"] = len(p.get("capas_info") or [])
+    v["pode_ajustar"] = (dir_projeto(p["id"]) / "trabalho" / "audio.json").exists() and \
+        (dir_projeto(p["id"]) / "trabalho" / "montagem.mp4").exists()
     v["tem"] = {k: True for k in (p.get("arquivos") or {})}
     if p.get("estado") == "editando" and p.get("inicio_ts"):
         dec = time.time() - p["inicio_ts"]
@@ -646,6 +1037,8 @@ class App(BaseHTTPRequestHandler):
                                    "erro_login": CONTA["erro_login"], "versao": VERSAO,
                                    "estilos": ESTILOS, "motivos": {k: v["texto"] for k, v in MOTIVOS.items()},
                                    "pasta": str(PASTA), "n_musicas": len(lista_musicas()),
+                                   "receitas": [[k, v["nome"]] for k, v in RECEITAS.items()],
+                                   "aviso_musica_ok": bool(aprendizado().get("aviso_musica_ok")),
                                    "drive": gdrive.link_pasta(conta["pasta_id"]) if ok and conta.get("pasta_id") else None,
                                    "destino": conta.get("destino_nome") if conta.get("pasta_id") else None})
             if url.path == "/api/picker":
@@ -664,6 +1057,46 @@ class App(BaseHTTPRequestHandler):
                                    "evitar": ap["musicas_evitar"], "boas": ap["musicas_boas"],
                                    "logo": (DADOS / "logo.png").exists(),
                                    "encerramento": next((f.name for f in DADOS.glob("encerramento.*")), None)})
+            if url.path == "/api/preferencias":
+                return self._json({"prefs": prefs_atuais(), "fontes": [list(o) for o in opcoes_fonte()]})
+            if url.path == "/api/estatisticas":
+                return self._json(estatisticas())
+            if url.path == "/api/avisos":
+                depois = float(q.get("depois", 0) or 0)
+                with TRAVA:
+                    novos = [a for a in AVISOS if a["ts"] > depois]
+                return self._json({"avisos": novos, "agora": time.time()})
+            if url.path == "/api/takes":
+                import analise
+                pasta = dir_projeto(q["id"]) / "takes"
+                lista = []
+                for f in sorted(pasta.iterdir()) if pasta.exists() else []:
+                    if f.suffix.lower() in VIDEO_EXT:
+                        try:
+                            lista.append({"nome": f.name, "duracao": round(analise.sondar(f)["duracao"], 1)})
+                        except Exception:
+                            pass
+                return self._json({"takes": lista})
+            if url.path == "/api/quadro":
+                tmp = DADOS / "_quadro.jpg"
+                with TRAVA:
+                    foto_do_take(q["id"], q["take"], float(q.get("seg", 0)), tmp)
+                    corpo = tmp.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", "image/jpeg")
+                self.send_header("Content-Length", str(len(corpo)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(corpo)
+                return
+            if url.path == "/api/capa_previa":
+                p = ler_projeto(q["id"]) or {}
+                info = (p.get("capas_info") or [])[int(q.get("n", 1)) - 1]
+                return self._arquivo(info["foto"])
+            if url.path == "/api/legenda":
+                f = dir_projeto(q["id"]) / "trabalho" / "legenda.json"
+                palavras = ler(f, [])
+                return self._json({"palavras": [{"i": i, "w": w["w"]} for i, w in enumerate(palavras)]})
             if url.path == "/api/musicas":
                 return self._json({"musicas": lista_musicas()})
             if url.path == "/api/ouvir":
@@ -718,7 +1151,8 @@ class App(BaseHTTPRequestHandler):
                 (dir_projeto(pid) / "takes").mkdir(parents=True)
                 p = {"id": pid, "nome": nome, "titulo": (d.get("titulo") or "").strip(),
                      "estilo": d.get("estilo") or "automatico",
-                     "modo": "entrevista" if d.get("modo") == "entrevista" else "normal", "estado": "recebendo", "etapa": "Recebendo os vídeos",
+                     "modo": "entrevista" if d.get("modo") == "entrevista" else "normal",
+                     "receita": d.get("receita") if d.get("receita") in RECEITAS else "padrao", "estado": "recebendo", "etapa": "Recebendo os vídeos",
                      "pct": 0, "criado": agora(), "criado_ts": time.time(), "n_takes": 0}
                 salvar_projeto(p)
                 return self._json({"id": pid})
@@ -736,8 +1170,109 @@ class App(BaseHTTPRequestHandler):
                 if not n:
                     atualizar(pid, estado="erro", erro="Nenhum vídeo recebido.")
                     return self._json({"erro": "Nenhum vídeo recebido."}, 400)
-                atualizar(pid, estado="na_fila", etapa="Na fila", n_takes=n, cortes=limpar_cortes(d.get("cortes")))
+                nomes = {}
+                for k, v in (d.get("nomes") or {}).items():
+                    if isinstance(v, dict) and str(v.get("nome", "")).strip():
+                        nomes[Path(str(k)).name] = {"nome": str(v["nome"]).strip()[:60], "cargo": str(v.get("cargo", "")).strip()[:60]}
+                atualizar(pid, estado="na_fila", etapa="Na fila", n_takes=n, cortes=limpar_cortes(d.get("cortes")), nomes=nomes)
                 enfileirar(pid)
+                return self._json({"ok": True})
+
+            if url.path == "/api/preferencias":
+                d = self._corpo_json()
+                validas = {m["k"]: m for m in PREFS}
+                ap = aprendizado()
+                if d.get("restaurar"):
+                    ap["prefs"] = {}
+                for k, v in (d.get("prefs") or {}).items():
+                    m = validas.get(k)
+                    if not m:
+                        continue
+                    if m["tipo"] == "liga":
+                        v = bool(v)
+                    elif m["tipo"] == "escolha":
+                        if v not in [o[0] for o in (opcoes_fonte() if m.get("fonte") else m["op"])]:
+                            continue
+                    elif m["tipo"] == "cor":
+                        if not re.fullmatch(r"#[0-9a-fA-F]{6}", str(v)):
+                            continue
+                    else:
+                        v = str(v)[:2000]
+                    ap["prefs"][k] = v
+                salvar_aprendizado(ap)
+                return self._json({"ok": True})
+
+            if url.path == "/api/capa":
+                d = self._corpo_json()
+                pid = d["id"]
+                p = ler_projeto(pid)
+                if not p or p.get("estado") != "previa":
+                    return self._json({"erro": "Só dá para mudar a capa de um vídeo que está esperando aprovação."}, 400)
+                trabalho = dir_projeto(pid) / "trabalho"
+                origem = d.get("origem")
+                rosto = None
+                if origem == "opcao":
+                    info = (p.get("capas_info") or [])[int(d.get("n", 1)) - 1]
+                    foto, rosto = info["foto"], info.get("rosto")
+                elif origem == "take":
+                    foto = foto_do_take(pid, d["take"], d.get("tempo", 0), trabalho / "capa_escolhida.png")
+                elif origem == "imagem":
+                    foto = trabalho / "capa_imagem.png"
+                    if not foto.exists():
+                        return self._json({"erro": "Envie a imagem primeiro."}, 400)
+                else:
+                    return self._json({"erro": "Origem de capa inválida."}, 400)
+                refazer_capa(pid, foto, rosto, titulo=d.get("titulo"), estilo=d.get("estilo") or None,
+                             posicao=d.get("posicao") or None, cor=d.get("cor") or None,
+                             fonte=d.get("fonte") if d.get("fonte") in [a for a, _ in opcoes_fonte()] else None)
+                return self._json({"ok": True})
+
+            if url.path == "/api/capa_imagem":
+                pid = q["id"]
+                if not ler_projeto(pid):
+                    return self._json({"erro": "Projeto não encontrado."}, 404)
+                trabalho = dir_projeto(pid) / "trabalho"
+                trabalho.mkdir(parents=True, exist_ok=True)
+                tmp = trabalho / "_capa_envio"
+                self._receber(tmp)
+                try:
+                    foto_de_imagem(tmp, trabalho / "capa_imagem.png")
+                except Exception:
+                    return self._json({"erro": "Não consegui abrir essa imagem. Use JPG ou PNG."}, 400)
+                finally:
+                    tmp.unlink(missing_ok=True)
+                return self._json({"ok": True})
+
+            if url.path == "/api/legenda":
+                d = self._corpo_json()
+                pid = d["id"]
+                p = ler_projeto(pid)
+                f = dir_projeto(pid) / "trabalho" / "legenda.json"
+                if not p or not f.exists() or p.get("estado") != "previa":
+                    return self._json({"erro": "Não dá para corrigir a legenda deste vídeo agora."}, 400)
+                palavras = ler(f, [])
+                for i, t in (d.get("edicoes") or {}).items():
+                    i = int(i)
+                    if 0 <= i < len(palavras) and str(t).strip():
+                        palavras[i]["w"] = str(t).strip()[:60]
+                refazer_final_em_segundo_plano(pid, "Aplicando a correção da legenda", palavras=palavras)
+                return self._json({"ok": True})
+
+            if url.path == "/api/ajuda":
+                import urllib.parse as up
+                corpo = "Versão: %s\nSistema: %s %s\n\nConte o que aconteceu:\n" % (VERSAO, platform.system(), platform.release())
+                webbrowser.open("https://wa.me/%s?text=%s" % (AJUDA_WHATSAPP, up.quote("Preciso de ajuda com o Gregio AutoEdit.\n" + corpo)))
+                return self._json({"ok": True, "email": AJUDA_WHATSAPP_TXT})
+
+            if url.path == "/api/relatorio":
+                f = gerar_relatorio()
+                abrir_no_sistema(f, revelar=True)
+                return self._json({"ok": True, "arquivo": str(f), "email": AJUDA_WHATSAPP_TXT})
+
+            if url.path == "/api/aviso_musica":
+                ap = aprendizado()
+                ap["aviso_musica_ok"] = True
+                salvar_aprendizado(ap)
                 return self._json({"ok": True})
 
             if url.path == "/api/acao":
@@ -751,6 +1286,8 @@ class App(BaseHTTPRequestHandler):
                     mudancas = aprender(p, True)
                     threading.Thread(target=aprovar_e_enviar, args=(pid,), daemon=True).start()
                 elif acao in ("reprovar", "refazer"):
+                    if not any(f.suffix.lower() in VIDEO_EXT for f in (dir_projeto(pid) / "takes").glob("*")):
+                        return self._json({"erro": "Os takes originais foram apagados para liberar espaço. Envie os vídeos de novo."}, 400)
                     motivos = d.get("motivos", [])
                     mudancas = aprender(p, False, motivos, d.get("nota", ""))
                     recusadas = p.get("musicas_recusadas", [])
@@ -759,6 +1296,36 @@ class App(BaseHTTPRequestHandler):
                     atualizar(pid, estado="na_fila", etapa="Na fila para refazer", pct=0,
                               musicas_recusadas=recusadas, erro=None)
                     enfileirar(pid)
+                elif acao == "cancelar":
+                    import render
+                    if ATUAL["id"] == pid:
+                        render.CANCELAR.set()
+                    else:
+                        with TRAVA:
+                            if pid in FILA:
+                                FILA.remove(pid)
+                        atualizar(pid, estado="erro", erro="Edição cancelada. Use \"Tentar de novo\" quando quiser.")
+                elif acao in ("subir", "descer"):
+                    with TRAVA:
+                        if pid in FILA:
+                            i = FILA.index(pid)
+                            j = i - 1 if acao == "subir" else i + 1
+                            if 0 <= j < len(FILA):
+                                FILA[i], FILA[j] = FILA[j], FILA[i]
+                elif acao == "trocar_musica":
+                    if p.get("estado") != "previa":
+                        return self._json({"erro": "Só dá para trocar a música de um vídeo esperando aprovação."}, 400)
+                    if not (dir_projeto(pid) / "trabalho" / "audio.json").exists() or not (dir_projeto(pid) / "trabalho" / "montagem.mp4").exists():
+                        return self._json({"erro": "Este vídeo foi feito numa versão antiga. Use Reprovar para refazer com a música nova."}, 400)
+                    escolhida = None
+                    if d.get("musica"):
+                        escolhida = next((Path(m["caminho"]) for m in lista_musicas() if m["nome"] == d["musica"]), None)
+                    if escolhida is None:
+                        evitar = list(p.get("musicas_recusadas", [])) + ([p["musica_nome"]] if p.get("musica_nome") else [])
+                        escolhida = escolher_musica(p.get("estilo"), evitar)
+                    if escolhida is None:
+                        return self._json({"erro": "Não há outra música para trocar. Adicione músicas em Ajustes."}, 400)
+                    refazer_final_em_segundo_plano(pid, "Trocando a música", musica=escolhida)
                 elif acao == "tentar_de_novo":
                     atualizar(pid, estado="na_fila", etapa="Na fila", pct=0, erro=None)
                     enfileirar(pid)
@@ -784,6 +1351,12 @@ class App(BaseHTTPRequestHandler):
                         abrir_no_sistema(p["pasta_pronta"])
                 elif d.get("onde") == "musicas":
                     abrir_no_sistema(MUSICAS)
+                elif d.get("onde") == "fontes":
+                    (PASTA / "Fontes").mkdir(exist_ok=True)
+                    abrir_no_sistema(PASTA / "Fontes")
+                elif d.get("onde") == "efeitos":
+                    (PASTA / "Efeitos").mkdir(exist_ok=True)
+                    abrir_no_sistema(PASTA / "Efeitos")
                 else:
                     abrir_no_sistema(PRONTOS)
                 return self._json({"ok": True})
@@ -810,6 +1383,8 @@ class App(BaseHTTPRequestHandler):
                 if d.get("liberar") in ap["musicas_evitar"]:
                     ap["musicas_evitar"].remove(d["liberar"])
                     salvar_aprendizado(ap)
+                if d.get("letra") is not None and d.get("estilo") and d.get("nome"):
+                    salvar_meta_musica(Path(d["estilo"]).name, Path(d["nome"]).name, letra=bool(d["letra"]))
                 if d.get("apagar"):
                     f = MUSICAS / Path(d["estilo"]).name / Path(d["apagar"]).name
                     if f.exists():
@@ -822,6 +1397,7 @@ class App(BaseHTTPRequestHandler):
                 if Path(nome).suffix.lower() not in AUDIO_EXT:
                     return self._json({"erro": "Formato de música não aceito."}, 400)
                 self._receber(MUSICAS / estilo / nome)
+                threading.Thread(target=analisar_musica, args=(estilo, nome), daemon=True).start()
                 return self._json({"ok": True})
 
             if url.path == "/api/marca":
@@ -852,6 +1428,11 @@ class App(BaseHTTPRequestHandler):
 
 
 def main(abrir=True):
+    _ligar_log()
+    (PASTA / "Efeitos").mkdir(exist_ok=True)
+    (PASTA / "Fontes").mkdir(exist_ok=True)
+    import capa
+    capa.PASTAS_FONTES.append(str(PASTA / "Fontes"))
     try:
         srv = ThreadingHTTPServer(("127.0.0.1", PORTA), App)
     except OSError:

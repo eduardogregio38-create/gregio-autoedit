@@ -130,3 +130,30 @@ def ajustar(roteiro, transicoes, tempos, cfg):
             d -= _overlap(transicoes[k], cfg, d, dur(roteiro[k + 1]))
         inicio += d
     return sincronizados
+
+
+def ponto_inicial(path, duracao_total=None):
+    """Onde a música 'começa de verdade': pula a introdução lenta/silêncio e cai numa batida forte.
+    Devolve segundos desde o começo do arquivo (0 se a faixa já abre com energia)."""
+    try:
+        y = _ler_audio(path, max_seg=90)
+        passo = SR // 4
+        n = len(y) // passo
+        if n < 8:
+            return 0.0
+        rms = np.sqrt((y[: n * passo].reshape(n, passo) ** 2).mean(axis=1))
+        teto = np.percentile(rms, 90)
+        if teto <= 1e-5:
+            return 0.0
+        i = int(np.argmax(rms > 0.55 * teto))
+        t = i * 0.25
+        if t < 1.0:
+            return 0.0
+        tempos, _ = batidas(path)
+        if tempos:
+            perto = [b for b in tempos if t - 0.3 <= b <= t + 1.5]
+            if perto:
+                t = perto[0]
+        return float(min(t, 20.0))
+    except Exception:
+        return 0.0

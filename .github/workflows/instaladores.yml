@@ -39,6 +39,10 @@ jobs:
           pip install -r requirements.txt pyinstaller==6.11.1 huggingface_hub
       - name: FFmpeg, modelo de voz e redução de ruído
         run: python build/preparar.py
+      - name: Testes automáticos (vários cenários)
+        continue-on-error: true
+        shell: bash
+        run: PATH="$PWD/bin:$PATH" python testes/teste_cenarios.py
       - name: Empacotar o motor de edição
         run: pyinstaller --noconfirm --clean --distpath dist --workpath work build/gregio.spec
 

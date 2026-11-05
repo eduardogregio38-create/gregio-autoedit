@@ -18,14 +18,27 @@
     "fala_min_clareza": 0.6,
     "fala_min_densidade": 0.3,
     "fala_min_confianca": -0.9,
-    "duracao_min_final_seg": 30
+    "duracao_min_final_seg": 30,
+    "ritmo_fala": "natural",
+    "ordem_meio": "sortear",
+    "tirar_recomecos": true,
+    "tirar_claquete": true,
+    "cortes_precisos": true
   },
   "audio": {
     "reducao_ruido": "fft",
     "som_ambiente_takes_local_db": -99,
     "volume_musica_db": -16,
     "ducking": true,
-    "loudness_final_lufs": -14
+    "loudness_final_lufs": -14,
+    "nivel_ruido": "auto",
+    "filtro_vento": true,
+    "igualar_volume": true,
+    "fade_emendas": true,
+    "musica_alta_sem_fala": true,
+    "realce_musica_db": 5,
+    "musica_ponto_certo": true,
+    "efeitos_transicao": false
   },
   "transicoes": {
     "entre_imagens": "corte",
@@ -38,16 +51,20 @@
   },
   "legendas": {
     "gerar_srt": true,
-    "queimar_no_video": false,
+    "queimar_no_video": true,
     "max_caracteres": 24,
-    "fonte": "Poppins",
+    "fonte": "Poppins-Bold.ttf",
     "tamanho": 9,
     "negrito": false,
     "cor": "&H00FFFFFF",
     "cor_contorno": "&H00000000",
     "contorno": 0.3,
     "sombra": 0,
-    "margem_inferior": 108
+    "margem_inferior": 108,
+    "estilo": "destaque",
+    "cor_destaque": "#FFD400",
+    "posicao": "baixo",
+    "maiusculas": false
   },
   "cobertura": {
     "ativar": true,
@@ -56,7 +73,8 @@
     "locais_na_montagem": 5
   },
   "encerramento": {
-    "duracao_imagem_seg": 3
+    "duracao_imagem_seg": 3,
+    "texto": ""
   },
   "ritmo": {
     "ativar": true,
@@ -66,5 +84,21 @@
   "whisper_beam": 1,
   "preset_x264": "veryfast",
   "crf": 20,
-  "gerar_pacote": true
+  "gerar_pacote": true,
+  "video": {
+    "melhorar_escuro": true,
+    "nitidez_final": true,
+    "estabilizar": false
+  },
+  "aceleracao": "auto",
+  "analise_paralela": 3,
+  "capa": {
+    "tres_opcoes": true,
+    "estilo": "classico",
+    "fonte": "Poppins-Bold.ttf",
+    "posicao": "baixo",
+    "cor": "#FFFFFF",
+    "margem_segura": true
+  },
+  "duracao_max_take_seg": 1800
 }

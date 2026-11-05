@@ -63,3 +63,32 @@ try:
 except Exception as e:
     print("sem RNNoise:", e)
 print("preparado")
+
+
+# coletânea de fontes livres (licença OFL, Google Fonts) para título da capa e legenda.
+# Se alguma não baixar, o instalador sai sem ela: as fontes Poppins continuam dentro do app.
+FONTES = RAIZ / "assets" / "fonts"; FONTES.mkdir(parents=True, exist_ok=True)
+GF = "https://raw.githubusercontent.com/google/fonts/main/ofl/"
+FUNDO = ["anton/Anton-Regular.ttf", "bebasneue/BebasNeue-Regular.ttf", "bangers/Bangers-Regular.ttf",
+         "archivoblack/ArchivoBlack-Regular.ttf", "lobster/Lobster-Regular.ttf", "pacifico/Pacifico-Regular.ttf",
+         "permanentmarker/PermanentMarker-Regular.ttf", "alfaslabone/AlfaSlabOne-Regular.ttf",
+         "bowlbyone/BowlbyOne-Regular.ttf", "russoone/RussoOne-Regular.ttf", "righteous/Righteous-Regular.ttf",
+         # divertidas
+         "luckiestguy/LuckiestGuy-Regular.ttf", "chewy/Chewy-Regular.ttf", "bungee/Bungee-Regular.ttf",
+         "lilitaone/LilitaOne-Regular.ttf", "titanone/TitanOne-Regular.ttf", "sigmarone/SigmarOne-Regular.ttf",
+         "shrikhand/Shrikhand-Regular.ttf", "boogaloo/Boogaloo-Regular.ttf", "caveatbrush/CaveatBrush-Regular.ttf",
+         "knewave/Knewave-Regular.ttf", "rammettoone/RammettoOne-Regular.ttf", "passionone/PassionOne-Bold.ttf",
+         "blackopsone/BlackOpsOne-Regular.ttf", "monoton/Monoton-Regular.ttf", "pressstart2p/PressStart2P-Regular.ttf",
+         "gochihand/GochiHand-Regular.ttf", "specialelite/SpecialElite-Regular.ttf", "satisfy/Satisfy-Regular.ttf",
+         "fugazone/FugazOne-Regular.ttf", "paytone one/PaytoneOne-Regular.ttf".replace(" ", ""),
+         "baloo2/Baloo2-Bold.ttf", "kalam/Kalam-Bold.ttf", "bubblegumsans/BubblegumSans-Regular.ttf",
+         "patrickhand/PatrickHand-Regular.ttf", "creepster/Creepster-Regular.ttf"]
+for caminho in FUNDO:
+    try:
+        nome = Path(caminho).name.replace("%5B", "[").replace("%2C", ",").replace("%5D", "]")
+        if "[" in nome:
+            continue  # fontes variáveis ficam de fora (só o peso padrão apareceria)
+        (FONTES / nome).write_bytes(baixar(GF + caminho))
+        print("  fonte ok", nome)
+    except Exception as e:
+        print("  fonte não baixou:", caminho, e)
