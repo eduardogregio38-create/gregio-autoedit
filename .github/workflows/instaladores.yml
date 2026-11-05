@@ -14,7 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-13        # Mac com Intel
+          - os: macos-15-intel        # Mac com Intel
             nome: Mac-Intel
             eb: --mac --x64
           - os: macos-14        # Mac com Apple Silicon (M1, M2, M3, M4)
