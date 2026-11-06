@@ -180,6 +180,50 @@ def melhor_quadro(video, destino: Path, quantas=1):
     return saidas[0] if quantas == 1 else saidas
 
 
+def _rgba(hexa, a=255):
+    h = hexa.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4)) + (a,)
+
+
+def _linha_destaque(draw, linha, fonte, y, cor, cor_dest, ultima):
+    """Escreve a linha centralizada; na última linha, a última palavra vai na cor de destaque."""
+    palavras = linha.split(" ")
+    esp = draw.textlength(" ", font=fonte)
+    larg = [draw.textlength(w, font=fonte) for w in palavras]
+    x = (W - (sum(larg) + esp * (len(palavras) - 1))) / 2
+    for i, w in enumerate(palavras):
+        c = cor_dest if ultima and i == len(palavras) - 1 else cor
+        draw.text((x + 3, y + 4), w, font=fonte, fill=(0, 0, 0, 150))
+        draw.text((x, y), w, font=fonte, fill=c)
+        x += larg[i] + esp
+
+
+def paleta_do_logo(logo, n=5):
+    """Cores mais marcantes do logo (ignora transparente, branco e preto quase puros). Devolve ['#RRGGBB', ...]."""
+    im = Image.open(logo).convert("RGBA")
+    im.thumbnail((120, 120))
+    px = [(r, g, b) for r, g, b, a in im.getdata() if a > 200 and not (max(r, g, b) < 28) and not (min(r, g, b) > 232)]
+    if not px:
+        return []
+    q = Image.new("RGB", (len(px), 1))
+    q.putdata(px)
+    q = q.quantize(colors=min(8, len(set(px))), method=Image.Quantize.MEDIANCUT)
+    pal = q.getpalette()[:3 * min(8, len(set(px)))]
+    cont = sorted(q.getcolors(), reverse=True)
+    saida = []
+    for _, i in cont:
+        r, g, b = pal[3 * i:3 * i + 3]
+        # só cores com vida (evita cinzas); a cor mais frequente entra mesmo se for neutra
+        if max(r, g, b) - min(r, g, b) < 28 and saida:
+            continue
+        hexa = "#%02X%02X%02X" % (r, g, b)
+        if all(sum(abs(a - b) for a, b in zip((r, g, b), (int(x[1:3], 16), int(x[3:5], 16), int(x[5:7], 16)))) > 60 for x in saida):
+            saida.append(hexa)
+        if len(saida) >= n:
+            break
+    return saida
+
+
 def _sombra(altura):
     a = np.clip(np.linspace(0, 1, altura), 0, 1) ** 1.6 * 255 * 0.75
     camada = np.zeros((altura, W, 4), dtype=np.uint8)
@@ -187,7 +231,7 @@ def _sombra(altura):
     return Image.fromarray(camada, "RGBA")
 
 
-ESTILOS_CAPA = ("classico", "faixa", "cor", "caixa")
+ESTILOS_CAPA = ("classico", "faixa", "cor", "caixa", "contorno", "destaque", "tarja", "minimal")
 
 
 def _contraste(hexa):
@@ -199,7 +243,7 @@ def _contraste(hexa):
     return "#111111" if (0.299 * r + 0.587 * g + 0.114 * b) > 150 else "#FFFFFF"
 
 
-def _caixa(base, texto, fonte, cor_titulo, cor_caixa, tag, cor_tag, logo, posicao, rosto, margem_segura):
+def _caixa(base, texto, fonte, cor_titulo, cor_caixa, tag, cor_tag, logo, posicao, rosto, margem_segura, subtitulo=""):
     """Estilo caixa: retângulo arredondado de cor lisa com etiqueta (tag) no topo, título e logo opcional embaixo."""
     if cor_titulo.upper() == "#FFFFFF" and _contraste(cor_caixa) == "#111111":
         cor_titulo = "#004B96"  # título branco em caixa clara não aparece: usa azul
@@ -216,6 +260,11 @@ def _caixa(base, texto, fonte, cor_titulo, cor_caixa, tag, cor_tag, logo, posica
     linhas = linhas[:3]
     alt_linha = int(tam * 1.15)
     bloco = alt_linha * len(linhas)
+    sub_f, sub_l = None, []
+    if subtitulo:
+        sub_f = _fonte(fonte, max(30, int(tam * 0.46)))
+        sub_l = _quebrar(subtitulo.strip(), sub_f, miolo, draw)[:2]
+        bloco += 12 + int(sub_f.size * 1.2) * len(sub_l)
 
     ft = _fonte(fonte, 38)
     tag = (tag or "").strip().upper()[:26]
@@ -255,6 +304,11 @@ def _caixa(base, texto, fonte, cor_titulo, cor_caixa, tag, cor_tag, logo, posica
     for ln in linhas:
         draw.text((W / 2, y), ln, font=f, fill=cor_titulo, anchor="ma")
         y += alt_linha
+    if sub_l:
+        y += 12
+        for ln in sub_l:
+            draw.text((W / 2, y), ln, font=sub_f, fill=cor_titulo, anchor="ma")
+            y += int(sub_f.size * 1.2)
     if lg is not None:
         base.alpha_composite(lg, ((W - lg.width) // 2, y + 36 - 8))
     return linhas
@@ -262,7 +316,7 @@ def _caixa(base, texto, fonte, cor_titulo, cor_caixa, tag, cor_tag, logo, posica
 
 def gerar(foto: Path, nome_projeto: str, destino: Path, rosto=None, titulo=None, logo=None, cor="#FFFFFF",
           estilo="classico", fonte="Poppins-Bold.ttf", posicao="baixo", margem_segura=True,
-          cor_caixa="#F1F1F1", tag="", cor_tag="#E63843"):
+          cor_caixa="#F1F1F1", tag="", cor_tag="#E63843", subtitulo=""):
     """Estilos: classico (sombra), faixa (barra escura atrás do título), cor (letras na cor escolhida).
     Posição: baixo, meio ou cima. Com margem_segura o título fica dentro do recorte 3:4 da grade do perfil
     (faixa de 240 a 1680) e longe dos botões do Reels."""
@@ -270,7 +324,7 @@ def gerar(foto: Path, nome_projeto: str, destino: Path, rosto=None, titulo=None,
     base = Image.open(foto).convert("RGBA").resize((W, H), Image.LANCZOS)
     draw = ImageDraw.Draw(base)
     if estilo == "caixa":
-        linhas = _caixa(base, texto, fonte, cor, cor_caixa, tag, cor_tag, logo, posicao, rosto, margem_segura)
+        linhas = _caixa(base, texto, fonte, cor, cor_caixa, tag, cor_tag, logo, posicao, rosto, margem_segura, subtitulo)
         base.convert("RGB").save(destino, quality=95)
         return destino, {"titulo": " / ".join(linhas)}
     largura_max = 820 if margem_segura else 940
@@ -283,8 +337,17 @@ def gerar(foto: Path, nome_projeto: str, destino: Path, rosto=None, titulo=None,
             break
         tam -= 4
     linhas = linhas[:3]
+    if estilo == "minimal":
+        tam = max(54, int(tam * 0.62))
+        f = _fonte(fonte, tam)
+        linhas = _quebrar(texto, f, largura_max, draw)[:3]
     alt_linha = int(tam * 1.12)
     bloco = alt_linha * len(linhas)
+    sub_f, sub_l = None, []
+    if subtitulo:
+        sub_f = _fonte(fonte, max(34, int(tam * 0.5)))
+        sub_l = _quebrar(subtitulo.strip(), sub_f, largura_max, draw)[:2]
+        bloco += 14 + int(sub_f.size * 1.2) * len(sub_l)
 
     centro = {"baixo": 1380, "meio": 960, "cima": 520}.get(posicao, 1380)
     topo = centro - bloco // 2
@@ -299,7 +362,13 @@ def gerar(foto: Path, nome_projeto: str, destino: Path, rosto=None, titulo=None,
     cor_texto = cor
     if estilo == "cor":
         cor_texto = "#FFD400" if cor.upper() == "#FFFFFF" else cor
-    if estilo == "faixa":
+    if estilo == "tarja":
+        cor_texto = _contraste(cor_caixa) if cor.upper() == "#FFFFFF" else cor
+        base.alpha_composite(Image.new("RGBA", (W, bloco + 110), _rgba(cor_caixa, 235)), (0, topo - 55))
+    elif estilo == "minimal":
+        base.alpha_composite(_sombra(H - max(0, topo - 300)), (0, max(0, topo - 300)))
+        ImageDraw.Draw(base).rounded_rectangle(((W - 120) // 2, topo - 46, (W + 120) // 2, topo - 36), radius=5, fill=cor_tag)
+    elif estilo == "faixa":
         faixa = Image.new("RGBA", (W, bloco + 90), (0, 0, 0, 175))
         base.alpha_composite(faixa, (0, topo - 45))
     else:
@@ -308,10 +377,24 @@ def gerar(foto: Path, nome_projeto: str, destino: Path, rosto=None, titulo=None,
     draw = ImageDraw.Draw(base)
 
     y = topo
-    for ln in linhas:
-        draw.text((W / 2 + 3, y + 4), ln, font=f, fill=(0, 0, 0, 150), anchor="ma")
-        draw.text((W / 2, y), ln, font=f, fill=cor_texto, anchor="ma")
+    for k, ln in enumerate(linhas):
+        if estilo == "contorno":
+            draw.text((W / 2, y), ln, font=f, fill=cor_texto, anchor="ma", stroke_width=max(6, tam // 12), stroke_fill=cor_tag)
+        elif estilo == "destaque":
+            _linha_destaque(draw, ln, f, y, cor_texto, cor_tag, ultima=(k == len(linhas) - 1))
+        elif estilo == "tarja":
+            draw.text((W / 2, y), ln, font=f, fill=cor_texto, anchor="ma")
+        else:
+            draw.text((W / 2 + 3, y + 4), ln, font=f, fill=(0, 0, 0, 150), anchor="ma")
+            draw.text((W / 2, y), ln, font=f, fill=cor_texto, anchor="ma")
         y += alt_linha
+    if sub_l:
+        y += 14
+        cor_sub = cor_texto if estilo != "tarja" else cor_texto
+        for ln in sub_l:
+            draw.text((W / 2 + 2, y + 3), ln, font=sub_f, fill=(0, 0, 0, 140), anchor="ma")
+            draw.text((W / 2, y), ln, font=sub_f, fill=cor_sub, anchor="ma")
+            y += int(sub_f.size * 1.2)
 
     if logo and Path(logo).exists():
         lg = Image.open(logo).convert("RGBA")

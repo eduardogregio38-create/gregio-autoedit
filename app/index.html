@@ -105,6 +105,17 @@ textarea{min-height:70px}
 a{color:var(--acento)}
 .cab-btn{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer}
 .cab-btn:hover{background:rgba(255,255,255,.22)}
+.cab-btn.ativo{background:rgba(255,255,255,.28)}
+/* animações leves: entram suave e respeitam quem desliga movimento no sistema */
+@keyframes entra{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes zoom-modal{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}
+@keyframes brilho{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.cartao{animation:entra .25s ease-out both}
+.fundo-modal .modal{animation:zoom-modal .18s ease-out both}
+.esqueleto{height:74px;border-radius:12px;margin:8px 0;background:linear-gradient(90deg,var(--linha) 25%,var(--fundo) 50%,var(--linha) 75%);background-size:200% 100%;animation:brilho 1.2s linear infinite}
+.botao,.cab-btn,nav button{transition:background-color .15s,opacity .15s,transform .1s}
+.botao:active{transform:scale(.98)}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 .hero{max-width:560px;margin:56px auto;text-align:center;padding:38px 30px}
 .hero .marca{justify-content:center;font-size:34px;color:var(--texto);margin-bottom:14px}
 .hero h1{font-size:23px;line-height:1.25;margin:0 0 10px}
@@ -139,11 +150,16 @@ a{color:var(--acento)}
 .leg-grade{display:grid;grid-template-columns:minmax(220px,290px) 1fr;gap:18px;align-items:start}
 @media (max-width:760px){.leg-grade{grid-template-columns:1fr}}
 .leg-video video{width:100%;border-radius:12px;background:#000;max-height:56vh}
+.leg-tela{position:relative}
+.leg-arraste{position:absolute;left:50%;transform:translate(-50%,-50%);max-width:92%;padding:4px 12px;border-radius:8px;border:2px dashed #fff9;color:#fff;font-weight:800;font-size:15px;text-shadow:0 1px 3px #000;background:#0005;cursor:grab;touch-action:none;user-select:none;white-space:nowrap;z-index:3}
+.leg-arraste:active{cursor:grabbing}
+.leg-barra{display:flex;gap:6px;align-items:center;margin:8px 0 0;font-size:12px;color:var(--suave)}
 .leg-linha{margin-top:10px;font-size:11px;color:var(--suave)}
 .leg-faixa{position:relative;height:26px;background:var(--fundo);border:1px solid var(--linha);border-radius:6px;margin-top:4px;overflow:hidden;cursor:pointer}
 .leg-faixa .b{position:absolute;top:3px;bottom:3px;background:var(--acento);opacity:.75;border-radius:3px}
 .leg-faixa .b.on{opacity:1;outline:2px solid var(--amarelo)}
 .leg-faixa.musica .b{background:var(--verde);top:8px;bottom:8px;opacity:.55}
+.leg-faixa .corte{position:absolute;top:0;bottom:0;background:#e5484d88;border-left:2px solid var(--vermelho);border-right:2px solid var(--vermelho);pointer-events:none;z-index:1}
 .leg-faixa .cab{position:absolute;top:0;bottom:0;width:2px;background:var(--vermelho);z-index:2;pointer-events:none}
 .leg-abas{display:flex;gap:6px;margin-bottom:10px}
 .leg-abas button{flex:1}
@@ -185,6 +201,7 @@ a{color:var(--acento)}
   <button class="recarregar" id="b-recarregar" title="Recarregar o app (Ctrl+R)">&#8635; Recarregar</button>
   <button class="cab-btn" id="b-ajuda" title="Falar comigo ou enviar um relatório de erro">? Preciso de ajuda</button>
   <button class="cab-btn" id="b-tema" title="Claro, escuro ou automático">&#9680; Tema</button>
+  <button class="cab-btn" id="b-config" title="Configurações" aria-label="Configurações" style="font-size:17px;padding:4px 10px">&#9881;</button>
   <div class="conta" id="conta"></div>
 </header>
 
@@ -280,7 +297,7 @@ a{color:var(--acento)}
   <section id="aba-prontos" style="display:none">
     <h2>Esperando sua aprovação</h2>
     <p class="sub">Assista ao vídeo. Aprovando, ele vai para o seu Google Drive. Reprovando, você diz o que não gostou e o app monta de novo e aprende para os próximos.</p>
-    <div class="grade" id="previas"></div>
+    <div class="grade" id="previas"><div class="esqueleto"></div></div>
     <h2 style="margin-top:34px">Aprovados</h2>
     <input type="text" id="busca" placeholder="Buscar vídeo pelo nome" style="max-width:360px;margin-bottom:12px">
     <p class="sub">Ficam no seu Drive e também neste computador. <a href="#" id="abrir-prontos">Abrir a pasta</a></p>
@@ -332,6 +349,28 @@ a{color:var(--acento)}
       </div>
     </div>
 
+    <div class="cartao"><h3>O que o app aprendeu</h3><div id="historico"></div></div>
+  </section>
+
+  <!-- ===================== CONFIGURAÇÕES ===================== -->
+  <section id="aba-config" style="display:none">
+    <h2>Configurações</h2>
+    <p class="sub">O que é seu e do aplicativo. Os ajustes do vídeo ficam na aba Ajustes.</p>
+
+    <div class="cartao"><h3>Sua conta</h3>
+      <div class="linha" style="align-items:flex-end">
+        <div style="max-width:280px"><label>Seu nome (aparece só aqui)</label><input id="cfg-nome" maxlength="40" placeholder="Como quer ser chamado"></div>
+        <div style="flex:0 0 auto;min-width:0"><button class="botao claro pequeno" id="cfg-salvar-nome">Salvar</button></div>
+      </div>
+      <p class="sub" style="margin-top:10px">Conta Google conectada: <b id="cfg-email"></b></p>
+      <div class="botoes" style="margin-top:0"><button class="botao claro pequeno" onclick="sair()">Sair desta conta</button></div>
+    </div>
+
+    <div class="cartao"><h3>Pastas</h3>
+      <p class="sub" id="cfg-pastas"></p>
+      <div class="botoes" style="margin-top:0"><button class="botao claro pequeno" onclick="api('/api/abrir',{})">Abrir vídeos prontos</button></div>
+    </div>
+
     <div class="cartao"><h3>Pasta no Google Drive</h3>
       <p class="sub" id="destino-atual"></p>
       <div class="botoes" style="margin-top:0"><button class="botao claro pequeno" onclick="escolherPasta()">Trocar a pasta</button></div>
@@ -344,10 +383,23 @@ a{color:var(--acento)}
     </div>
 
     <div class="cartao"><h3>Seu uso (só neste computador)</h3><div class="estat" id="estat"></div>
-      <div class="botoes"><button class="botao claro pequeno" onclick="abrirAjuda()">Preciso de ajuda</button>
+</div>
+
+    <div class="cartao"><h3>Ajuda</h3>
+      <div class="botoes" style="margin-top:0"><button class="botao claro pequeno" onclick="abrirAjuda()">Preciso de ajuda</button>
       <button class="botao claro pequeno" onclick="iniciarTutorial()">Ver o tutorial</button></div></div>
 
-    <div class="cartao"><h3>O que o app aprendeu</h3><div id="historico"></div></div>
+    <div class="cartao"><h3>Espaço no computador</h3>
+      <p class="sub" id="cfg-uso"></p>
+      <p class="sub" style="font-size:13px">Apagar os arquivos de trabalho dos vídeos já aprovados libera espaço. Os vídeos prontos não são tocados.</p>
+      <div class="botoes" style="margin-top:0"><button class="botao claro pequeno" id="cfg-limpar">Limpar arquivos de trabalho</button></div>
+    </div>
+
+    <div class="cartao" style="border-color:var(--vermelho)"><h3 style="color:var(--vermelho)">Apagar minha conta e meus dados</h3>
+      <p class="sub">Apaga deste computador os seus projetos, músicas, relatórios, logo e o que o app aprendeu com você, e tira o acesso do app ao seu Google. O que já está no seu Google Drive não é apagado.</p>
+      <label style="display:flex;gap:8px;align-items:center;margin:8px 0"><input type="checkbox" id="cfg-manter" checked style="width:auto"> Guardar uma cópia dos meus vídeos prontos numa pasta separada</label>
+      <div class="botoes" style="margin-top:0"><button class="botao claro" style="color:var(--vermelho)" id="cfg-apagar">Apagar minha conta e meus dados</button></div>
+    </div>
   </section>
 </main>
 
@@ -398,16 +450,21 @@ a{color:var(--acento)}
     <img id="capa-img-prev" style="width:46%;max-width:240px;border-radius:10px;margin:10px 0;display:none"></div>
   <div style="display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap"><div style="flex:1;min-width:290px"><div class="linha" style="margin-top:12px">
     <div style="flex:2"><label>Título da capa</label><input type="text" id="capa-titulo"></div>
-    <div><label>Estilo</label><select id="capa-estilo"><option value="caixa">Caixa de cor</option><option value="classico">Clássico</option><option value="faixa">Faixa escura</option><option value="cor">Letras coloridas</option></select></div>
+    <div style="flex:2;flex-basis:100%"><label>Subtítulo (opcional)</label><input type="text" id="capa-sub" maxlength="60" placeholder="Ex.: Passo a passo em 1 minuto"></div>
+    <div><label>Estilo</label><select id="capa-estilo"><option value="caixa">Caixa de cor</option><option value="classico">Clássico</option><option value="faixa">Faixa escura</option><option value="cor">Letras coloridas</option><option value="contorno">Letras com contorno</option><option value="destaque">Última palavra em destaque</option><option value="tarja">Tarja de cor inteira</option><option value="minimal">Minimalista</option></select></div>
     <div><label>Posição</label><select id="capa-pos"><option value="baixo">Embaixo</option><option value="meio">No meio</option><option value="cima">Em cima</option></select></div>
     <div><label>Fonte</label><select id="capa-fonte"></select></div>
     <div style="flex:0 0 70px;min-width:70px"><label>Cor</label><input type="color" id="capa-cor" value="#ffffff" style="width:100%;height:42px;border:1px solid var(--linha);border-radius:9px;background:none;padding:2px"></div></div>
   <div class="linha" id="capa-caixa-ctl">
-    <div style="flex:2"><label>Etiqueta no topo da caixa (deixe vazio para não ter)</label><input type="text" id="capa-tag" maxlength="26" placeholder="Ex.: DICA, NOVIDADE, BASTIDORES"></div>
-    <div style="flex:0 0 90px;min-width:90px"><label>Cor da caixa</label><input type="color" id="capa-cor-caixa" value="#f1f1f1" style="width:100%;height:42px;border:1px solid var(--linha);border-radius:9px;background:none;padding:2px"></div>
-    <div style="flex:0 0 90px;min-width:90px"><label>Cor da etiqueta</label><input type="color" id="capa-cor-tag" value="#e63843" style="width:100%;height:42px;border:1px solid var(--linha);border-radius:9px;background:none;padding:2px"></div></div>
+    <div style="flex:2" id="capa-tag-wrap"><label>Etiqueta no topo da caixa (deixe vazio para não ter)</label><input type="text" id="capa-tag" maxlength="26" placeholder="Ex.: DICA, NOVIDADE, BASTIDORES"></div>
+    <div style="flex:0 0 90px;min-width:90px" id="capa-caixa-wrap"><label>Cor da caixa</label><input type="color" id="capa-cor-caixa" value="#f1f1f1" style="width:100%;height:42px;border:1px solid var(--linha);border-radius:9px;background:none;padding:2px"></div>
+    <div style="flex:0 0 90px;min-width:90px" id="capa-tagcor-wrap"><label id="capa-tagcor-rot">Cor da etiqueta</label><input type="color" id="capa-cor-tag" value="#e63843" style="width:100%;height:42px;border:1px solid var(--linha);border-radius:9px;background:none;padding:2px"></div></div>
+  <div id="capa-paleta" style="display:none;margin-top:8px"><span class="sub">Cores do seu logo (clique para usar):</span>
+    <span id="capa-paleta-cores" style="display:inline-flex;gap:6px;vertical-align:middle;margin-left:6px"></span></div>
   </div><div style="text-align:center;margin:12px 0;flex:0 0 210px"><div class="sub" style="margin-bottom:6px">Prévia da capa (muda enquanto você edita)</div>
-    <img id="capa-previa" style="width:100%;max-width:210px;border-radius:12px;background:#000;display:none"></div>
+    <img id="capa-previa" style="width:100%;max-width:210px;border-radius:12px;background:#000;display:none">
+    <div class="sub" style="margin:12px 0 6px">Como fica na grade do Instagram</div>
+    <div id="capa-grade" style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px;max-width:210px;margin:auto;background:#000;border-radius:6px;overflow:hidden"></div></div>
 </div>
   <div class="botoes"><button class="botao" id="capa-ok">Usar esta capa</button><button class="botao claro" id="capa-fechar">Fechar</button></div>
 </div></div>
@@ -417,9 +474,19 @@ a{color:var(--acento)}
   <p class="sub" style="margin-top:0">Clique numa frase para ir até ela no vídeo. Mudou? Aperte "Aplicar": o vídeo é refeito em segundos, sem renderizar as cenas de novo.</p>
   <div class="leg-grade">
     <div class="leg-video">
-      <video id="leg-video" controls playsinline preload="auto"></video>
+      <div class="leg-tela"><video id="leg-video" controls playsinline preload="auto"></video>
+        <div class="leg-arraste" id="leg-arraste" title="Arraste para mudar a posição da legenda">Arraste a legenda</div></div>
+      <div class="leg-barra"><button class="botao claro pequeno" id="leg-desfazer" title="Desfazer (Ctrl+Z)">&#8630; Desfazer</button>
+        <button class="botao claro pequeno" id="leg-refazer" title="Refazer (Ctrl+Shift+Z)">&#8631; Refazer</button>
+        <span>Espaço toca/pausa · J e L voltam/avançam 2 s · Ctrl+Z desfaz</span></div>
       <div class="leg-linha">Legenda<div class="leg-faixa" id="leg-faixa"></div>
         <span id="leg-mus-rot">Música</span><div class="leg-faixa musica" id="leg-musica"></div></div>
+      <div class="leg-barra" style="flex-wrap:wrap;margin-top:10px">
+        <button class="botao claro pequeno" id="cor-ini" title="Marca onde o trecho a tirar começa (tecla I)">Início aqui</button>
+        <button class="botao claro pequeno" id="cor-fim" title="Marca onde o trecho a tirar termina (tecla O)">Fim aqui</button>
+        <button class="botao claro pequeno" id="cor-tirar" style="color:var(--vermelho)">&#9986; Tirar trecho</button>
+        <button class="botao claro pequeno" id="cor-voltar" style="display:none">Voltar ao original</button>
+        <span id="cor-info">Corte um trecho do meio do vídeo (I e O marcam)</span></div>
     </div>
     <div>
       <div class="leg-abas"><button class="botao claro pequeno on" id="aba-frases">Frases</button><button class="botao claro pequeno" id="aba-estilo">Estilo</button></div>
@@ -507,15 +574,17 @@ function rotulo(s){ return s==="automatico" ? "Automático" : s[0].toUpperCase()
 document.querySelectorAll("#abas button").forEach(b=>b.onclick=()=>abrirAba(b.dataset.aba));
 function abrirAba(a){
   document.querySelectorAll("#abas button").forEach(b=>b.classList.toggle("ativo", b.dataset.aba===a));
-  ["midias","entrevistas","prontos","ajustes"].forEach(x=>$("#aba-"+x).style.display = x===a ? "" : "none");
+  ["midias","entrevistas","prontos","ajustes","config"].forEach(x=>$("#aba-"+x).style.display = x===a ? "" : "none");
+  $("#b-config").classList.toggle("ativo", a==="config");
   if (a==="ajustes") carregarAjustes();
+  if (a==="config") carregarConfig();
   try{ localStorage.setItem("aba", a); }catch(e){}
 }
 
 // ---------- login ----------
 function mostrarLogin(sim){
   $("#entrar").style.display = sim ? "" : "none";
-  if (sim) ["midias","entrevistas","prontos","ajustes"].forEach(x=>$("#aba-"+x).style.display="none");
+  if (sim) ["midias","entrevistas","prontos","ajustes","config"].forEach(x=>$("#aba-"+x).style.display="none");
   $("#abas").style.visibility = sim ? "hidden" : "visible";
 }
 $("#b-login").onclick = async ()=>{ await api("/api/login", {}); $("#login-erro").textContent="Abri uma aba do navegador para você escolher a conta. Depois de autorizar, volte para cá."; esperarLogin(); };
@@ -849,6 +918,28 @@ window.escolherPasta = async ()=>{
 window.usarRaiz = async ()=>{ try{ await api("/api/destino", {id:null, nome:"Meu Drive"}); toast("Pronto! A pasta Gregio AutoEdit está na raiz do seu Drive."); }catch(e){ toast("Erro: "+e.message); } atualizarEstado(); };
 setInterval(()=>{ if (!document.hidden && ESTADO.logado && !ESTADO.destino) atualizarEstado(); }, 4000);
 
+
+// ---------- configurações ----------
+$("#b-config").onclick = ()=> abrirAba("config");
+async function carregarConfig(){
+  const c = await api("/api/configuracoes");
+  $("#cfg-nome").value = c.nome || ""; $("#cfg-email").textContent = c.email || "";
+  $("#cfg-pastas").innerHTML = `Vídeos prontos: <b>${esc(c.pasta_prontos)}</b>`;
+  $("#cfg-uso").textContent = `Projetos: ${tamanho(c.uso.projetos)} · Vídeos prontos: ${tamanho(c.uso.prontos)} · Músicas: ${tamanho(c.uso.musicas)}`;
+  if (window.gregioApp) procurarAtualizacao(false);
+  carregarEstat();
+}
+$("#cfg-salvar-nome").onclick = async ()=>{ try{ await api("/api/nome",{nome:$("#cfg-nome").value}); toast("Salvo."); }catch(e){ toast("Erro: "+e.message); } };
+$("#cfg-limpar").onclick = async ()=>{ try{ const r = await api("/api/limpar_agora",{}); toast(r.liberado ? "Liberei "+tamanho(r.liberado)+"." : "Não havia o que limpar."); carregarConfig(); }catch(e){ toast("Erro: "+e.message); } };
+$("#cfg-apagar").onclick = async ()=>{
+  if (!confirm("Apagar a sua conta e todos os seus dados deste computador? Isso não dá para desfazer.")) return;
+  const t = prompt("Para confirmar, digite APAGAR:");
+  if (t !== "APAGAR") { toast("Nada foi apagado."); return; }
+  try{ const r = await api("/api/apagar_conta",{confirmar:"APAGAR", manter_prontos:$("#cfg-manter").checked});
+    alert("Pronto. Seus dados foram apagados deste computador." + (r.guardados? "\nSeus vídeos prontos ficaram em: "+r.guardados : "") + "\nPara tirar também o acesso pelo lado do Google, abra myaccount.google.com/permissions.");
+    location.reload(); }catch(e){ toast("Erro: "+e.message); }
+};
+
 // ---------- atualização do app (só existe dentro do app instalado) ----------
 async function procurarAtualizacao(manual){
   if (!window.gregioApp) return;
@@ -917,11 +1008,11 @@ const CAPA = {id:null, aba:"opcoes", n:1, take:null, tempo:0, imagem:false, time
 async function abrirCapa(id){
   const p = PROJ.find(x=>x.id===id); if (!p) return;
   Object.assign(CAPA, {id, aba:"opcoes", n:1, imagem:false});
-  $("#capa-titulo").value = p.titulo || p.nome; $("#capa-estilo").value = "caixa"; $("#capa-pos").value = "baixo"; $("#capa-cor").value = "#004b96"; $("#capa-tag").value = ""; $("#capa-cor-caixa").value = "#f1f1f1"; $("#capa-cor-tag").value = "#e63843";
+  $("#capa-titulo").value = p.titulo || p.nome; $("#capa-sub").value = p.subtitulo || ""; $("#capa-estilo").value = "caixa"; $("#capa-pos").value = "baixo"; $("#capa-cor").value = "#004b96"; $("#capa-tag").value = ""; $("#capa-cor-caixa").value = "#f1f1f1"; $("#capa-cor-tag").value = "#e63843";
   $("#capa-fotos").innerHTML = Array.from({length:p.n_capas||0},(_, i)=>`<div><img data-n="${i+1}" class="${i===0?"sel":""}" src="${comChave(`/api/capa_previa?id=${id}&n=${i+1}`)}"></div>`).join("") || `<div class="vazio">Sem sugestões neste vídeo. Use as outras abas.</div>`;
   document.querySelectorAll("#capa-fotos img").forEach(im=>im.onclick=()=>{ CAPA.n = +im.dataset.n; document.querySelectorAll("#capa-fotos img").forEach(x=>x.classList.toggle("sel", x===im)); capaPrevia(); });
   try{ const r = await api("/api/preferencias"); $("#capa-fonte").innerHTML = r.fontes.map(f=>`<option value="${esc(f[0])}">${esc(f[1])}</option>`).join(""); }catch(e){}
-  capaAba("opcoes"); $("#modal-capa").style.display = "flex"; capaMostrarCtl(); capaPrevia();
+  capaAba("opcoes"); $("#modal-capa").style.display = "flex"; capaMostrarCtl(); capaPaleta(); capaPrevia();
   try{ const {takes} = await api("/api/takes?id="+id); CAPA.takes = takes;
     $("#capa-take-sel").innerHTML = takes.map(t=>`<option value="${esc(t.nome)}">${esc(t.nome)} (${fmtTempo(t.duracao)})</option>`).join(""); capaTake(); }catch(e){}
 }
@@ -947,13 +1038,33 @@ $("#capa-img-arq").onchange = async e=>{
 };
 function capaCorpo(){
   const corpo = {id:CAPA.id, titulo:$("#capa-titulo").value, estilo:$("#capa-estilo").value, posicao:$("#capa-pos").value, fonte:$("#capa-fonte").value, cor:$("#capa-cor").value,
-    cor_caixa:$("#capa-cor-caixa").value, tag:$("#capa-tag").value, cor_tag:$("#capa-cor-tag").value};
+    cor_caixa:$("#capa-cor-caixa").value, tag:$("#capa-tag").value, cor_tag:$("#capa-cor-tag").value, subtitulo:$("#capa-sub").value};
   if (CAPA.aba==="opcoes") Object.assign(corpo, {origem:"opcao", n:CAPA.n});
   else if (CAPA.aba==="take") Object.assign(corpo, {origem:"take", take:CAPA.take || $("#capa-take-sel").value, tempo:CAPA.tempo});
   else { if (!CAPA.imagem) return null; Object.assign(corpo, {origem:"imagem"}); }
   return corpo;
 }
-function capaMostrarCtl(){ $("#capa-caixa-ctl").style.display = $("#capa-estilo").value==="caixa" ? "" : "none"; }
+function capaMostrarCtl(){ const e = $("#capa-estilo").value;
+  $("#capa-caixa-ctl").style.display = ["caixa","tarja","contorno","destaque","minimal"].includes(e) ? "" : "none";
+  $("#capa-tag-wrap").style.display = e==="caixa" ? "" : "none";
+  $("#capa-caixa-wrap").style.display = ["caixa","tarja"].includes(e) ? "" : "none";
+  $("#capa-tagcor-wrap").style.display = ["caixa","contorno","destaque","minimal"].includes(e) ? "" : "none";
+  $("#capa-tagcor-rot").textContent = e==="caixa" ? "Cor da etiqueta" : e==="contorno" ? "Cor do contorno" : e==="minimal" ? "Cor do traço" : "Cor do destaque"; }
+// cores do logo da pessoa viram botões prontos
+async function capaPaleta(){
+  try{ const r = await api("/api/logo_paleta"); const box = $("#capa-paleta-cores");
+    $("#capa-paleta").style.display = r.cores.length ? "" : "none";
+    box.innerHTML = r.cores.map(c=>`<button type="button" data-c="${c}" title="${c}" style="width:28px;height:28px;border-radius:50%;border:2px solid var(--linha);background:${c};cursor:pointer"></button>`).join(""); }catch(e){}
+}
+$("#capa-paleta-cores").onclick = e=>{ const b = e.target.closest("button"); if (!b) return; const e2 = $("#capa-estilo").value;
+  const alvo = ["caixa","tarja"].includes(e2) ? "#capa-cor-caixa" : ["contorno","destaque","minimal"].includes(e2) ? "#capa-cor-tag" : "#capa-cor";
+  $(alvo).value = b.dataset.c.toLowerCase(); capaPrevia(); };
+// prévia da grade 3:4 do perfil: esta capa ao lado das últimas do perfil
+function capaGrade(srcAtual){
+  const outras = PROJ.filter(x=>x.id!==CAPA.id && x.tem && x.tem.capa).slice(0,5);
+  const casa = s=>`<div style="aspect-ratio:3/4;background:#222 center/cover no-repeat url('${s}');"></div>`;
+  $("#capa-grade").innerHTML = casa(srcAtual) + outras.map(o=>casa(midia(o,"capa")+"&v="+vers(o))).join("") + Array.from({length:Math.max(0,5-outras.length)},()=>`<div style="aspect-ratio:3/4;background:#1c1c22"></div>`).join("");
+}
 function capaPrevia(){
   clearTimeout(CAPA.tp);
   CAPA.tp = setTimeout(async ()=>{
@@ -963,7 +1074,7 @@ function capaPrevia(){
     try{
       const r = await fetch("/api/capa_teste", {method:"POST", headers:{"Content-Type":"application/json","X-Gregio-Chave":CHAVE}, body:JSON.stringify(corpo)});
       if (!r.ok || meu!==CAPA.prevN) return;
-      const url = URL.createObjectURL(await r.blob()); if (im.dataset.u) URL.revokeObjectURL(im.dataset.u); im.dataset.u = url; im.src = url; im.style.display = "";
+      const url = URL.createObjectURL(await r.blob()); if (im.dataset.u) URL.revokeObjectURL(im.dataset.u); im.dataset.u = url; im.src = url; im.style.display = ""; capaGrade(url);
     }catch(e){}
   }, 350);
 }
@@ -971,7 +1082,7 @@ $("#capa-estilo").addEventListener("change", ()=>{
   const c = $("#capa-cor"); const caixa = $("#capa-estilo").value==="caixa";
   if (caixa && c.value.toLowerCase()==="#ffffff") c.value = "#004b96"; else if (!caixa && c.value.toLowerCase()==="#004b96") c.value = "#ffffff";
   capaMostrarCtl(); });
-["capa-titulo","capa-estilo","capa-pos","capa-fonte","capa-cor","capa-tag","capa-cor-caixa","capa-cor-tag","capa-tempo","capa-take-sel"].forEach(i=>{ $("#"+i).addEventListener("input", capaPrevia); $("#"+i).addEventListener("change", capaPrevia); });
+["capa-titulo","capa-sub","capa-estilo","capa-pos","capa-fonte","capa-cor","capa-tag","capa-cor-caixa","capa-cor-tag","capa-tempo","capa-take-sel"].forEach(i=>{ $("#"+i).addEventListener("input", capaPrevia); $("#"+i).addEventListener("change", capaPrevia); });
 document.querySelectorAll("#capa-abas button").forEach(b=>b.addEventListener("click", capaPrevia));
 $("#capa-fechar").onclick = ()=> $("#modal-capa").style.display = "none";
 $("#capa-ok").onclick = async ()=>{
@@ -983,7 +1094,7 @@ $("#capa-ok").onclick = async ()=>{
 };
 
 // ---------- editar legenda (lista por frases, estilo e linha do tempo) ----------
-let LEG = {id:null, frases:[], orig:"", estilo:{}, estiloOrig:"", dur:1};
+let LEG = {id:null, frases:[], orig:"", estilo:{}, estiloOrig:"", dur:1, posY:null, hist:[], hp:-1};
 const PRESETS = [
   {n:"Amarelo", e:{cor_texto:"#FFFFFF", cor_destaque:"#FFD400", maiusculas:false}, c:"#FFD400"},
   {n:"Branco", e:{cor_texto:"#FFFFFF", cor_destaque:"#FFFFFF", maiusculas:false}, c:"#FFFFFF"},
@@ -995,7 +1106,7 @@ const PRESETS = [
 const fmtT = t => { t=Math.max(0,t); return Math.floor(t/60)+":"+String(Math.floor(t%60)).padStart(2,"0"); };
 function legEstiloLer(){
   return {fonte:$("#est-fonte").value, tamanho_ass:$("#est-tam").value, cor_texto:$("#est-cor").value, cor_destaque:$("#est-dest").value,
-          posicao:$("#est-pos").value, maiusculas:$("#est-caixa").value==="s"};
+          posicao:$("#est-pos").value, maiusculas:$("#est-caixa").value==="s", pos_y: LEG.posY==null ? null : LEG.posY};
 }
 function legEstiloPor(e){
   if (e.fonte) $("#est-fonte").value = e.fonte;
@@ -1004,7 +1115,42 @@ function legEstiloPor(e){
   if (e.cor_destaque) $("#est-dest").value = e.cor_destaque;
   if (e.posicao) $("#est-pos").value = e.posicao;
   if (typeof e.maiusculas==="boolean") $("#est-caixa").value = e.maiusculas ? "s" : "n";
+  if ("pos_y" in e) LEG.posY = typeof e.pos_y==="number" ? e.pos_y : null;
+  legPosArraste();
 }
+// posição da legenda: arrastar direto no vídeo
+function legPosArraste(){ const y = LEG.posY ?? ($("#est-pos").value==="meio" ? 0.5 : 0.76);
+  $("#leg-arraste").style.top = (y*100)+"%"; }
+(function(){
+  const el = $("#leg-arraste"); let arrastando = false;
+  el.addEventListener("pointerdown", e=>{ arrastando = true; el.setPointerCapture(e.pointerId); e.preventDefault(); });
+  el.addEventListener("pointermove", e=>{ if (!arrastando) return; const r = $("#leg-video").getBoundingClientRect();
+    LEG.posY = Math.min(0.95, Math.max(0.08, (e.clientY - r.top) / r.height)); legPosArraste(); });
+  el.addEventListener("pointerup", ()=>{ if (arrastando){ arrastando = false; legGuardar(); } });
+})();
+// desfazer / refazer
+function legSnap(){ return JSON.stringify({t: LEG.frases.map(f=>f.texto), e: legEstiloLer()}); }
+function legGuardar(){ const s = legSnap(); if (LEG.hist[LEG.hp] === s) return; LEG.hist = LEG.hist.slice(0, LEG.hp+1); LEG.hist.push(s); if (LEG.hist.length>80) LEG.hist.shift(); LEG.hp = LEG.hist.length-1; legBotoesHist(); }
+function legBotoesHist(){ $("#leg-desfazer").disabled = LEG.hp<=0; $("#leg-refazer").disabled = LEG.hp>=LEG.hist.length-1; }
+function legIrHist(d){ const n = LEG.hp+d; if (n<0 || n>=LEG.hist.length) return; LEG.hp = n; const s = JSON.parse(LEG.hist[n]);
+  LEG.frases.forEach((f,k)=>{ f.texto = s.t[k] ?? f.texto; }); legEstiloPor(s.e); legDesenharLista(); legBotoesHist(); }
+$("#leg-desfazer").onclick = ()=>legIrHist(-1); $("#leg-refazer").onclick = ()=>legIrHist(1);
+document.addEventListener("keydown", e=>{
+  if ($("#modal-legenda").style.display !== "flex") return;
+  const emCampo = ["TEXTAREA","INPUT","SELECT"].includes(e.target.tagName);
+  const ctrl = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
+  if (ctrl && k==="z"){ e.preventDefault(); legIrHist(e.shiftKey ? 1 : -1); return; }
+  if (ctrl && k==="y"){ e.preventDefault(); legIrHist(1); return; }
+  if (!emCampo && !ctrl && e.key.toLowerCase()==="i"){ $("#cor-ini").click(); return; }
+  if (!emCampo && !ctrl && e.key.toLowerCase()==="o"){ $("#cor-fim").click(); return; }
+  if (e.key==="Escape"){ $("#legenda-fechar").click(); return; }
+  if (ctrl && e.key==="Enter"){ e.preventDefault(); legEnviar(); return; }
+  if (emCampo || ctrl) return;
+  const v = $("#leg-video");
+  if (e.key===" "){ e.preventDefault(); v.paused ? v.play() : v.pause(); }
+  else if (k==="j") v.currentTime = Math.max(0, v.currentTime-2);
+  else if (k==="l") v.currentTime = v.currentTime+2;
+});
 function legDesenharFaixa(){
   const d = LEG.dur || 1;
   $("#leg-faixa").innerHTML = '<div class="cab" id="leg-cab" style="left:0"></div>' + LEG.frases.map((f,k)=>
@@ -1019,8 +1165,31 @@ function legDesenharLista(){
     || '<div class="vazio">Nada encontrado.</div>';
   document.querySelectorAll("#leg-lista textarea").forEach(t=>{ t.style.height="auto"; t.style.height=t.scrollHeight+"px"; });
 }
+// corte de um trecho na linha do tempo
+function corteDesenhar(){
+  const f = $("#leg-faixa"); f.querySelector(".corte")?.remove(); const d = LEG.dur || 1;
+  if (LEG.cA!=null && LEG.cB!=null && LEG.cB>LEG.cA){ const x = document.createElement("div"); x.className="corte";
+    x.style.left=(LEG.cA/d*100)+"%"; x.style.width=((LEG.cB-LEG.cA)/d*100)+"%"; f.appendChild(x); }
+  $("#cor-info").textContent = LEG.cA==null && LEG.cB==null ? "Corte um trecho do meio do vídeo (I e O marcam)"
+    : `Trecho a tirar: ${LEG.cA==null?"?":fmtT(LEG.cA)} até ${LEG.cB==null?"?":fmtT(LEG.cB)}${LEG.cB>LEG.cA ? " ("+(LEG.cB-LEG.cA).toFixed(1)+" s)":""}`;
+}
+$("#cor-ini").onclick = ()=>{ LEG.cA = $("#leg-video").currentTime; if (LEG.cB!=null && LEG.cB<=LEG.cA) LEG.cB = null; corteDesenhar(); };
+$("#cor-fim").onclick = ()=>{ LEG.cB = $("#leg-video").currentTime; if (LEG.cA!=null && LEG.cA>=LEG.cB) LEG.cA = null; corteDesenhar(); };
+$("#cor-tirar").onclick = async ()=>{
+  if (LEG.cA==null || LEG.cB==null || LEG.cB<=LEG.cA) return toast("Marque o começo (Início aqui) e o fim (Fim aqui) do trecho.");
+  const feitas = JSON.stringify(LEG.frases.map(f=>f.texto)) !== LEG.orig;
+  if (feitas && !confirm("Você mudou a legenda e ainda não aplicou. Ao cortar, essas mudanças de texto são perdidas. Continuar?")) return;
+  if (!confirm(`Tirar do vídeo o trecho de ${fmtT(LEG.cA)} até ${fmtT(LEG.cB)} (${(LEG.cB-LEG.cA).toFixed(1)} s)? Dá para voltar ao original depois.`)) return;
+  try{ await api("/api/acao", {acao:"cortar_trecho", id:LEG.id, de:LEG.cA, ate:LEG.cB}); $("#leg-video").pause(); $("#modal-legenda").style.display="none";
+    toast("Cortando o trecho. Em instantes o vídeo volta atualizado."); chavePrevias=""; atualizar(); }catch(e){ toast("Erro: "+e.message); }
+};
+$("#cor-voltar").onclick = async ()=>{
+  if (!confirm("Desfazer todos os cortes de trecho e voltar ao vídeo como o app montou?")) return;
+  try{ await api("/api/acao", {acao:"voltar_cortes", id:LEG.id}); $("#leg-video").pause(); $("#modal-legenda").style.display="none";
+    toast("Voltando ao original."); chavePrevias=""; atualizar(); }catch(e){ toast("Erro: "+e.message); }
+};
 async function abrirLegenda(id){
-  LEG = {id, frases:[], orig:"", estilo:{}, estiloOrig:"", dur:1};
+  LEG = {id, frases:[], orig:"", estilo:{}, estiloOrig:"", dur:1, posY:null, hist:[], hp:-1, cA:null, cB:null};
   try{ const r = await api("/api/legenda?id="+id);
     if (!r.frases.length) return toast("Este vídeo não tem legenda para corrigir.");
     LEG.frases = r.frases.map(f=>({...f})); LEG.orig = JSON.stringify(r.frases.map(f=>f.texto));
@@ -1028,11 +1197,13 @@ async function abrirLegenda(id){
     $("#est-salvos").innerHTML = '<option value="">Escolher…</option>' + (r.estilos_salvos||[]).map((x,i)=>`<option value="${i}">${esc(x.nome)}</option>`).join("");
     LEG.salvos = r.estilos_salvos||[];
     legEstiloPor(r.estilo||{}); LEG.estiloOrig = JSON.stringify(legEstiloLer());
+    LEG.hist = []; LEG.hp = -1; legGuardar();
     $("#leg-presets").innerHTML = PRESETS.map((x,i)=>`<button data-i="${i}" style="color:${x.c}" title="${x.n}">Aa</button>`).join("");
     const v = $("#leg-video"); v.src = midia({id}, "video") + "&v=" + Date.now();
-    v.onloadedmetadata = ()=>{ LEG.dur = v.duration || 1; legDesenharFaixa(); };
+    v.onloadedmetadata = ()=>{ LEG.dur = v.duration || 1; legDesenharFaixa(); corteDesenhar(); };
     LEG.dur = r.frases[r.frases.length-1].fim + 0.5; legDesenharFaixa(); legDesenharLista();
-    $("#leg-busca").value = ""; legAba("frases");
+    $("#leg-busca").value = ""; legAba("frases"); corteDesenhar();
+    const pj = PROJ.find(x=>x.id===id); $("#cor-voltar").style.display = pj && pj.cortado ? "" : "none";
     $("#modal-legenda").style.display = "flex";
   }catch(e){ toast("Erro: "+e.message); }
 }
@@ -1048,7 +1219,7 @@ function legIr(k){ const f = LEG.frases[k]; if (!f) return; const v=$("#leg-vide
   document.querySelectorAll("#leg-faixa .b").forEach(e=>e.classList.toggle("on", +e.dataset.k===k)); }
 $("#leg-lista").addEventListener("click", e=>{
   const k = +(e.target.dataset.k ?? e.target.closest(".leg-frase")?.dataset.k);
-  if (e.target.classList.contains("x")){ LEG.frases[k].texto = ""; e.target.closest(".leg-frase").style.opacity = .35; e.target.closest(".leg-frase").querySelector("textarea").value = ""; return; }
+  if (e.target.classList.contains("x")){ LEG.frases[k].texto = ""; e.target.closest(".leg-frase").style.opacity = .35; e.target.closest(".leg-frase").querySelector("textarea").value = ""; legGuardar(); return; }
   if (!isNaN(k)) legIr(k);
 });
 $("#leg-lista").addEventListener("input", e=>{ if (e.target.tagName==="TEXTAREA"){ LEG.frases[+e.target.dataset.k].texto = e.target.value; e.target.style.height="auto"; e.target.style.height=e.target.scrollHeight+"px"; } });
@@ -1059,8 +1230,11 @@ $("#leg-video").ontimeupdate = ()=>{ const t=$("#leg-video").currentTime, c=$("#
   const k = LEG.frases.findIndex(f=>t>=f.ini && t<=f.fim+0.05);
   document.querySelectorAll(".leg-frase").forEach(e=>e.classList.toggle("on", +e.dataset.k===k)); };
 $("#leg-presets").onclick = e=>{ const b=e.target.closest("button"); if(!b) return; legEstiloPor(PRESETS[+b.dataset.i].e);
-  document.querySelectorAll("#leg-presets button").forEach(x=>x.classList.toggle("on", x===b)); };
-$("#est-salvos").onchange = e=>{ const x = LEG.salvos[+e.target.value]; if (x) legEstiloPor(x.estilo); };
+  document.querySelectorAll("#leg-presets button").forEach(x=>x.classList.toggle("on", x===b)); legGuardar(); };
+$("#est-salvos").onchange = e=>{ const x = LEG.salvos[+e.target.value]; if (x){ legEstiloPor(x.estilo); legGuardar(); } };
+["est-fonte","est-tam","est-cor","est-dest","est-caixa"].forEach(i=> $("#"+i).addEventListener("change", legGuardar));
+$("#est-pos").addEventListener("change", ()=>{ LEG.posY = null; legPosArraste(); legGuardar(); });
+$("#leg-lista").addEventListener("change", e=>{ if (e.target.tagName==="TEXTAREA") legGuardar(); });
 $("#legenda-fechar").onclick = ()=>{ $("#leg-video").pause(); $("#modal-legenda").style.display = "none"; };
 async function legEnviar(extra={}){
   const frases = {}; LEG.frases.forEach((f,k)=>{ const orig = JSON.parse(LEG.orig)[k]; if (f.texto!==orig) frases[f.n] = f.texto; });

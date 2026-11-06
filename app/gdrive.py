@@ -99,10 +99,46 @@ def _credenciais():
     return d.get("installed") or d.get("web")
 
 
+def _fernet():
+    """Cifra o token com a chave do cofre do sistema (vem do Electron). Sem ela, usa um arquivo de chave
+    só do dono do computador. Se a biblioteca de cifra faltar, devolve None e o token fica só com permissão restrita."""
+    try:
+        import base64, hashlib
+        from cryptography.fernet import Fernet
+        bruto = os.environ.get("GREGIO_CHAVE_LOCAL")
+        if not bruto:
+            arq = DADOS / "chave_local.bin"
+            if not arq.exists():
+                arq.write_bytes(base64.b64encode(os.urandom(32)))
+                os.chmod(arq, 0o600)
+            bruto = arq.read_text().strip()
+        return Fernet(base64.urlsafe_b64encode(hashlib.sha256(bruto.encode()).digest()))
+    except Exception:
+        return None
+
+
 def _salvar_token(t):
     tok = DADOS / "token.json"
-    tok.write_text(json.dumps(t), encoding="utf-8")
+    f = _fernet()
+    if f:
+        tok.write_bytes(b"GREGIO1:" + f.encrypt(json.dumps(t).encode("utf-8")))
+    else:
+        tok.write_text(json.dumps(t), encoding="utf-8")
     os.chmod(tok, 0o600)
+
+
+def _ler_token_arquivo(tok):
+    """Lê o token cifrado (ou o antigo, em texto, que é recifrado na próxima gravação)."""
+    bruto = tok.read_bytes()
+    if bruto.startswith(b"GREGIO1:"):
+        f = _fernet()
+        if not f:
+            raise PermissionError("login")
+        try:
+            return json.loads(f.decrypt(bruto[8:]).decode("utf-8"))
+        except Exception:
+            raise PermissionError("login")  # chave diferente (outro usuário do sistema): pede login de novo
+    return json.loads(bruto.decode("utf-8"))
 
 
 def _trocar_token(campos):
@@ -123,7 +159,7 @@ def token_acesso():
             tok = DADOS / "token.json"
             if not tok.exists():
                 raise PermissionError("login")
-            _TOKEN.update(json.loads(tok.read_text(encoding="utf-8")))
+            _TOKEN.update(_ler_token_arquivo(tok))
         if not _TOKEN.get("refresh_token"):
             raise PermissionError("login")
         if not _TOKEN.get("access_token") or _TOKEN.get("expira", 0) < time.time() + 60:
@@ -333,6 +369,22 @@ def enviar_grande(caminho, nome, pasta, progresso):
             raise RuntimeError("Drive %d no envio: %s" % (st, dados[:200]))
 
 
+
+
+def revogar():
+    """Pede ao Google para cancelar o acesso do app a esta conta (best effort)."""
+    try:
+        tok = _TOKEN.get("refresh_token") or _TOKEN.get("access_token")
+        if not tok:
+            arq = DADOS / "token.json"
+            if arq.exists():
+                t = _ler_token_arquivo(arq)
+                tok = t.get("refresh_token") or t.get("access_token")
+        if tok:
+            requisicao("POST", "https://oauth2.googleapis.com/revoke", urllib.parse.urlencode({"token": tok}).encode(),
+                       {"Content-Type": "application/x-www-form-urlencoded"})
+    except Exception:
+        pass
 
 
 def sair():

@@ -39,10 +39,13 @@ jobs:
           pip install -r requirements.txt pyinstaller==6.11.1 huggingface_hub
       - name: FFmpeg, modelo de voz e redução de ruído
         run: python build/preparar.py
-      - name: Testes automáticos (vários cenários)
-        continue-on-error: true
+      - name: Testes automáticos (se algum falhar, o instalador não é gerado)
         shell: bash
-        run: PATH="$PWD/bin:$PATH" python testes/teste_cenarios.py
+        run: |
+          export PATH="$PWD/bin:$PATH"
+          python testes/teste_contas.py
+          python testes/teste_legenda.py
+          python testes/teste_cenarios.py
       - name: Credenciais do Google (vêm dos Secrets do GitHub, nunca do código)
         shell: bash
         env:

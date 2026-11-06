@@ -1,6 +1,6 @@
 // Gregio AutoEdit: janela do app (Electron). O motor de edição roda num processo
 // separado (backend em Python empacotado) e a janela conversa com ele em 127.0.0.1.
-const { app, BrowserWindow, shell, dialog, Menu, ipcMain } = require("electron");
+const { app, BrowserWindow, shell, dialog, Menu, ipcMain, safeStorage } = require("electron");
 const atualizador = require("./atualizador");
 const { spawn } = require("child_process");
 const path = require("path");
@@ -34,9 +34,24 @@ function caminhoBackend() {
   return path.join(__dirname, "..", "dist", "backend", nome);
 }
 
+// Chave que protege o acesso ao Google guardado no computador. Ela fica no cofre do sistema
+// (Keychain no Mac, proteção do Windows): sem a conta do usuário no computador, o arquivo do token não abre.
+function chaveLocal() {
+  try {
+    if (!safeStorage.isEncryptionAvailable()) return "";
+    const arq = path.join(app.getPath("userData"), "chave.bin");
+    if (fs.existsSync(arq)) return safeStorage.decryptString(fs.readFileSync(arq));
+    const nova = crypto.randomBytes(32).toString("base64");
+    fs.writeFileSync(arq, safeStorage.encryptString(nova), { mode: 0o600 });
+    return nova;
+  } catch (e) { return ""; }
+}
+
 function iniciarBackend() {
   const exe = caminhoBackend();
   const env = Object.assign({}, process.env, { GREGIO_PORTA: String(porta), GREGIO_TOKEN: CHAVE, GREGIO_VERSAO: app.getVersion() });
+  const cl = chaveLocal();
+  if (cl) env.GREGIO_CHAVE_LOCAL = cl;
   if (!app.isPackaged && !fs.existsSync(exe)) {
     // desenvolvimento: roda o Python direto
     backend = spawn(process.env.PYTHON || "python3", [path.join(__dirname, "..", "gregio.py"), "--sem-navegador"], { env });

@@ -187,7 +187,12 @@ def gerar_ass(palavras, destino: Path, cfg, total, nomes=None, texto_final=None,
     esc = W / 1080.0
     tam = int(lg.get("ass_tamanho", 84) * esc)
     margem = int(lg.get("ass_margem_inferior", 430 if H > W else 120))
-    if lg.get("posicao", "baixo") == "meio":
+    py = lg.get("pos_y")
+    if isinstance(py, (int, float)) and not isinstance(py, bool):
+        # posição livre (arrastada na tela): py é onde fica o centro do texto, de 0 (topo) a 1 (base)
+        py = min(0.95, max(0.08, float(py)))
+        alin, margem = 2, int(max(0, (1 - py) * H - tam * 0.6))
+    elif lg.get("posicao", "baixo") == "meio":
         alin, margem = 5, 0
     else:
         alin = 2

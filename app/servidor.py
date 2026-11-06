@@ -56,18 +56,130 @@ def _pasta_dados():
     return Path.home() / ".local" / "share" / NOME_APP
 
 
-DADOS = Path(os.environ.get("GREGIO_DADOS", _pasta_dados()))
-PASTA = Path(os.environ.get("GREGIO_PASTA", Path.home() / NOME_APP))
+# DADOS_BASE / PASTA_BASE: o que é do aplicativo (log, acesso ao Google, efeitos, fontes).
+# DADOS / PASTA: o que é de UMA conta do Google (projetos, vídeos prontos, músicas, aprendizados, logo, destino do Drive).
+# Eles trocam quando alguém entra ou sai (ativar_perfil), para uma conta nunca enxergar os arquivos de outra.
+DADOS_BASE = Path(os.environ.get("GREGIO_DADOS", _pasta_dados()))
+PASTA_BASE = Path(os.environ.get("GREGIO_PASTA", Path.home() / NOME_APP))
+DADOS, PASTA = DADOS_BASE, PASTA_BASE
 PROJETOS = PASTA / "Projetos"
 MUSICAS = PASTA / "Músicas"
 PRONTOS = PASTA / "Vídeos prontos"
-for p in (DADOS, PROJETOS, MUSICAS, PRONTOS):
+PERFIL = {"email": None}
+for p in (DADOS_BASE, PASTA_BASE):
     p.mkdir(parents=True, exist_ok=True)
-gdrive.configurar(DADOS, AQUI / "credentials.json")
+gdrive.configurar(DADOS_BASE, AQUI / "credentials.json")  # o acesso ao Google fica na base, só uma conta por vez
 
 ESTILOS = ["automatico", "animada", "emocionante", "inspiradora", "leve", "agro", "corporativa"]
-for e in ESTILOS[1:]:
-    (MUSICAS / e).mkdir(exist_ok=True)
+
+
+def _slug_conta(email):
+    """Nome seguro de pasta para uma conta (sem barras nem pontos soltos)."""
+    import re as _re
+    s = _re.sub(r"[^a-z0-9@._-]+", "_", (email or "").strip().lower()).strip("._")
+    return (s or "_sem_conta")[:80]
+
+
+def ativar_perfil(email):
+    """Aponta todas as pastas para a área da conta. Sem conta (None) usa uma área vazia que nada herda."""
+    global DADOS, PASTA, PROJETOS, MUSICAS, PRONTOS, AP_ARQ, META_MUS
+    nome = _slug_conta(email)
+    DADOS = DADOS_BASE / "Contas" / nome
+    PASTA = PASTA_BASE / "Contas" / nome
+    PROJETOS, MUSICAS, PRONTOS = PASTA / "Projetos", PASTA / "Músicas", PASTA / "Vídeos prontos"
+    for p in (DADOS, PROJETOS, MUSICAS, PRONTOS):
+        p.mkdir(parents=True, exist_ok=True)
+    for e in ESTILOS[1:]:
+        (MUSICAS / e).mkdir(exist_ok=True)
+    AP_ARQ = DADOS / "aprendizado.json"
+    META_MUS = DADOS / "musicas_meta.json"
+    PERFIL["email"] = email or None
+
+
+def _mesclar(origem, destino):
+    """Move o conteúdo de origem para destino, entrando nas pastas que já existem dos dois lados."""
+    destino.mkdir(parents=True, exist_ok=True)
+    for f in list(origem.iterdir()):
+        alvo = destino / f.name
+        if f.is_dir():
+            _mesclar(f, alvo)
+        elif not alvo.exists():
+            shutil.move(str(f), str(alvo))
+    try:
+        origem.rmdir()
+    except OSError:
+        pass
+
+
+def migrar_legado(email):
+    """Versões antigas guardavam tudo numa área só. Quem entrar primeiro depois da atualização leva esses arquivos
+    para a sua conta (num computador de uma pessoa só, é ela mesma). Acontece uma única vez."""
+    marca = DADOS_BASE / "legado_migrado.json"
+    if marca.exists() or not email:
+        return
+    try:
+        base_d, base_p = DADOS_BASE, PASTA_BASE
+        antigo = ler(base_d / "conta.json", {}) if (base_d / "conta.json").exists() else {}
+        itens = [(base_d / n, DADOS / n) for n in ("aprendizado.json", "musicas_meta.json", "logo.png")]
+        itens += [(f, DADOS / f.name) for f in base_d.glob("encerramento.*")]
+        itens += [(base_p / n, PASTA / n) for n in ("Projetos", "Músicas", "Vídeos prontos", "Relatórios")]
+        if (antigo.get("email") or "").lower() == email.lower():
+            itens.append((base_d / "conta.json", DADOS / "conta.json"))
+        for origem, destino in itens:
+            if not origem.exists():
+                continue
+            if origem.is_dir():
+                _mesclar(origem, destino)
+            elif not destino.exists():
+                shutil.move(str(origem), str(destino))
+            else:
+                origem.unlink(missing_ok=True)
+        (base_d / "conta.json").unlink(missing_ok=True)
+        gravar(marca, {"para": email, "quando": time.strftime("%Y-%m-%d %H:%M")})
+    except Exception:
+        traceback.print_exc()
+
+
+ativar_perfil(None)
+
+
+def _tamanho_pasta(p):
+    t = 0
+    try:
+        for f in Path(p).rglob("*"):
+            if f.is_file():
+                t += f.stat().st_size
+    except OSError:
+        pass
+    return t
+
+
+def apagar_conta(manter_prontos):
+    """Apaga do computador tudo o que é da conta atual e tira o acesso do app ao Google.
+    Os vídeos que já estão no Drive da pessoa não são tocados. Devolve a pasta dos vídeos guardados, se houver."""
+    email = PERFIL["email"]
+    if not email:
+        raise ValueError("Nenhuma conta conectada.")
+    pasta, dados, prontos = PASTA, DADOS, PRONTOS
+    guardados = None
+    if manter_prontos and prontos.exists() and any(prontos.iterdir()):
+        guardados = PASTA_BASE / "Vídeos guardados" / _slug_conta(email)
+        _mesclar(prontos, guardados)
+    try:  # o padrão aprendido também fica no Drive: tira de lá
+        pid = pasta_drive()
+        fid, _ = gdrive.ler_json_drive(pid, AP_DRIVE)
+        if fid:
+            gdrive.drive("DELETE", "files/" + fid)
+    except Exception:
+        pass
+    gdrive.revogar()
+    gdrive.sair()
+    (DADOS_BASE / "conta_atual.json").unlink(missing_ok=True)
+    ativar_perfil(None)
+    for d in (pasta, dados):
+        if d.parent.name == "Contas":  # trava de segurança: só apaga dentro de Contas/
+            shutil.rmtree(d, ignore_errors=True)
+    return guardados
 VIDEO_EXT = {".mp4", ".mov", ".mkv", ".avi", ".m4v", ".mts", ".3gp", ".webm"}
 AUDIO_EXT = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"}
 
@@ -102,7 +214,7 @@ MOTIVOS = {
 
 # ---------------- PREFERÊNCIAS (tela de ajustes avançados) E RECEITAS ----------------
 
-OP_CAPA_ESTILO = [("caixa", "Caixa de cor (estilo Canva)"), ("classico", "Clássico (sombra)"), ("faixa", "Faixa escura atrás do título"), ("cor", "Letras coloridas")]
+OP_CAPA_ESTILO = [("caixa", "Caixa de cor (estilo Canva)"), ("classico", "Clássico (sombra)"), ("faixa", "Faixa escura atrás do título"), ("cor", "Letras coloridas"), ("contorno", "Letras com contorno"), ("destaque", "Última palavra em destaque"), ("tarja", "Tarja de cor inteira"), ("minimal", "Minimalista")]
 PREFS = [
     {"k": "selecao.ritmo_fala", "tipo": "escolha", "grupo": "Cortes", "nome": "Ritmo da fala",
      "op": [("natural", "Natural"), ("dinamico", "Dinâmico"), ("seco", "Bem seco")]},
@@ -189,10 +301,11 @@ def prefs_atuais(ap=None):
 
 
 TRAVA = threading.Lock()
+_NEGADOS = []
 FILA = []
 EVENTO = threading.Event()
 ATUAL = {"id": None}
-LOG = DADOS / "app.log"
+LOG = DADOS_BASE / "app.log"
 
 
 class _Tee:
@@ -315,10 +428,12 @@ def escolher_destino(destino_id, destino_nome):
 
 def depois_do_login():
     try:
-        conta = ler(DADOS / "conta.json", {})
         novo = gdrive.email()
-        if novo != conta.get("email"):
-            conta = {"email": novo}
+        ativar_perfil(novo)
+        migrar_legado(novo)
+        gravar(DADOS_BASE / "conta_atual.json", {"email": novo})
+        conta = ler(DADOS / "conta.json", {})
+        conta["email"] = novo
         gravar(DADOS / "conta.json", conta)
         if conta.get("pasta_id"):
             puxar_aprendizado()
@@ -578,6 +693,8 @@ def _estilo_valido(e):
         out["tamanho_ass"] = e["tamanho_ass"]
     if e.get("posicao") in ("baixo", "meio"):
         out["posicao"] = e["posicao"]
+    if isinstance(e.get("pos_y"), (int, float)) and not isinstance(e.get("pos_y"), bool):
+        out["pos_y"] = round(min(0.95, max(0.08, float(e["pos_y"]))), 3)
     if isinstance(e.get("maiusculas"), bool):
         out["maiusculas"] = e["maiusculas"]
     if isinstance(e.get("fonte"), str) and e["fonte"] in {a for a, _ in opcoes_fonte()}:
@@ -599,7 +716,7 @@ def config_edicao(p=None):
     editor._mesclar(cfg, _sem_prefs(rec, prefs))
     if isinstance(cfg.get("vocabulario"), str):
         cfg["vocabulario"] = [l.strip() for l in cfg["vocabulario"].splitlines() if l.strip()]
-    cfg["_pasta_efeitos"] = str(PASTA / "Efeitos")
+    cfg["_pasta_efeitos"] = str(PASTA_BASE / "Efeitos")
     cfg["_nomes"] = (p or {}).get("nomes") or {}
     est = (p or {}).get("legenda_estilo")
     if isinstance(est, dict):
@@ -722,7 +839,7 @@ def _estado_ocupado(pid, etapa):
 
 
 def refazer_capa(pid, foto, rosto=None, titulo=None, estilo=None, posicao=None, cor=None, fonte=None,
-                 cor_caixa=None, tag=None, cor_tag=None, destino=None):
+                 cor_caixa=None, tag=None, cor_tag=None, destino=None, subtitulo=None):
     import capa
     p = ler_projeto(pid)
     cfg = config_edicao(p)
@@ -736,12 +853,14 @@ def refazer_capa(pid, foto, rosto=None, titulo=None, estilo=None, posicao=None, 
                fonte=fonte or cp.get("fonte", "Poppins-Bold.ttf"), posicao=posicao or cp.get("posicao", "baixo"),
                cor=cor or cp.get("cor", "#FFFFFF"), margem_segura=cp.get("margem_segura", True),
                cor_caixa=cor_caixa or cp.get("cor_caixa", "#F1F1F1"), tag=(tag if tag is not None else cp.get("tag", "")),
-               cor_tag=cor_tag or cp.get("cor_tag", "#E63843"))
+               cor_tag=cor_tag or cp.get("cor_tag", "#E63843"),
+               subtitulo=(subtitulo if subtitulo is not None else p.get("subtitulo", "")))
     if destino:
         return dest
     arq = dict(p.get("arquivos") or {})
     arq["capa"] = str(dest)
-    atualizar(pid, arquivos=arq, rev=int(time.time() * 1000), titulo=titulo if titulo is not None else p.get("titulo"))
+    atualizar(pid, arquivos=arq, rev=int(time.time() * 1000), titulo=titulo if titulo is not None else p.get("titulo"),
+               subtitulo=subtitulo if subtitulo is not None else p.get("subtitulo", ""))
     return dest
 
 
@@ -768,7 +887,7 @@ def foto_de_imagem(origem, destino):
     return destino
 
 
-def refazer_final_em_segundo_plano(pid, etapa, musica=None, palavras=None):
+def refazer_final_em_segundo_plano(pid, etapa, musica=None, palavras=None, antes=None):
     """Troca a música e/ou corrige a legenda sem renderizar as cenas de novo."""
     import editor
     _estado_ocupado(pid, etapa)
@@ -777,6 +896,8 @@ def refazer_final_em_segundo_plano(pid, etapa, musica=None, palavras=None):
         p = ler_projeto(pid)
         try:
             cfg = config_edicao(p)
+            if antes:
+                antes(cfg)
             m = musica if musica is not None else (Path(p["musica_arq"]) if p.get("musica_arq") else None)
             if m is not None and not Path(m).exists():
                 m = None
@@ -802,7 +923,7 @@ def limpar_trabalho(pid):
         pasta = dir_projeto(pid)
         t = pasta / "trabalho"
         shutil.rmtree(t / "blocos", ignore_errors=True)
-        for nome in ("montagem.mp4",):
+        for nome in ("montagem.mp4", "montagem_original.mp4"):
             (t / nome).unlink(missing_ok=True)
         if ap.get("prefs", {}).get("limpar_takes_apos_aprovar", False):
             shutil.rmtree(pasta / "takes", ignore_errors=True)
@@ -936,6 +1057,7 @@ def visao(p):
             v["rev"] = max(int(p.get("rev") or 0), int(Path(arq).stat().st_mtime * 1000))
     except Exception:
         pass
+    v["cortado"] = (dir_projeto(p["id"]) / "trabalho" / "montagem_original.mp4").exists()
     v["pode_ajustar"] = (dir_projeto(p["id"]) / "trabalho" / "audio.json").exists() and \
         (dir_projeto(p["id"]) / "trabalho" / "montagem.mp4").exists()
     v["tem"] = {k: True for k in (p.get("arquivos") or {})}
@@ -1045,6 +1167,11 @@ class App(BaseHTTPRequestHandler):
         return hmac.compare_digest(chave, CHAVE)
 
     def _negar(self):
+        # freio contra tentativa de adivinhar a chave: muitas recusas seguidas ganham uma pausa
+        agora = time.time()
+        _NEGADOS[:] = [t for t in _NEGADOS if agora - t < 60] + [agora]
+        if len(_NEGADOS) > 20:
+            time.sleep(2)
         corpo = b'{"erro": "acesso negado"}'
         self.send_response(403)
         self.send_header("Content-Type", "application/json")
@@ -1056,7 +1183,11 @@ class App(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("X-Frame-Options", "DENY")
-        self.send_header("Referrer-Policy", "no-referrer")
+        if not (getattr(self, "path", "") or "").startswith("/picker"):  # o seletor do Drive precisa carregar scripts do Google
+            self.send_header("Content-Security-Policy",
+                             "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+                             "img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; "
+                             "object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
         super().end_headers()
 
     def do_HEAD(self):
@@ -1090,6 +1221,10 @@ class App(BaseHTTPRequestHandler):
                 g = google_cfg()
                 return self._json({"token": gdrive.token_acesso(), "chave": g.get("api_key", ""),
                                    "app_id": g.get("app_id", "")})
+            if url.path == "/api/configuracoes":
+                return self._json({"email": PERFIL["email"] or "", "nome": ler(DADOS / "conta.json", {}).get("nome", ""), "pasta": str(PASTA), "pasta_prontos": str(PRONTOS), "versao": VERSAO,
+                                   "uso": {"projetos": _tamanho_pasta(PROJETOS), "prontos": _tamanho_pasta(PRONTOS),
+                                           "musicas": _tamanho_pasta(MUSICAS)}})
             if url.path == "/api/projetos":
                 return self._json({"projetos": [visao(p) for p in todos_projetos()]})
             if url.path == "/api/arquivo":
@@ -1148,7 +1283,7 @@ class App(BaseHTTPRequestHandler):
                                    "frases": exportar.frases(palavras, mc),
                                    "estilo": {k: (lg.get(k) if lg.get(k) is not None else d) for k, d in (
                                        ("fonte", "Poppins-Bold.ttf"), ("cor_texto", "#FFFFFF"), ("cor_destaque", "#FFD400"),
-                                       ("tamanho_ass", "media"), ("posicao", "baixo"), ("maiusculas", False))},
+                                       ("tamanho_ass", "media"), ("posicao", "baixo"), ("maiusculas", False), ("pos_y", None))},
                                    "estilos_salvos": aprendizado().get("estilos_legenda", []),
                                    "fontes": [list(o) for o in opcoes_fonte()]})
             if url.path == "/api/musicas":
@@ -1156,6 +1291,10 @@ class App(BaseHTTPRequestHandler):
             if url.path == "/api/ouvir":
                 f = MUSICAS / Path(q["estilo"]).name / Path(q["nome"]).name
                 return self._arquivo(f)
+            if url.path == "/api/logo_paleta":
+                import capa
+                logo = DADOS / "logo.png"
+                return self._json({"cores": capa.paleta_do_logo(logo) if logo.exists() else []})
             if url.path == "/api/logo":
                 return self._arquivo(DADOS / "logo.png")
             return self._json({"erro": "não encontrado"}, 404)
@@ -1190,10 +1329,45 @@ class App(BaseHTTPRequestHandler):
                 pid = escolher_destino(d.get("id"), d.get("nome"))
                 return self._json({"ok": True, "link": gdrive.link_pasta(pid)})
 
+            if url.path == "/api/limpar_agora":
+                liberado = 0
+                for p in todos_projetos():
+                    if p.get("estado") != "pronto":
+                        continue  # só de vídeo já aprovado; o que está em edição não é tocado
+                    t = dir_projeto(p["id"]) / "trabalho"
+                    antes = _tamanho_pasta(t)
+                    shutil.rmtree(t / "blocos", ignore_errors=True)
+                    (t / "montagem.mp4").unlink(missing_ok=True)
+                    (t / "montagem_original.mp4").unlink(missing_ok=True)
+                    liberado += max(0, antes - _tamanho_pasta(t))
+                return self._json({"ok": True, "liberado": liberado})
+            if url.path == "/api/nome":
+                nome = re.sub(r"\s+", " ", str(self._corpo_json().get("nome") or "")).strip()[:40]
+                cfg = ler(DADOS / "conta.json", {})
+                cfg["nome"] = nome
+                gravar(DADOS / "conta.json", cfg)
+                return self._json({"ok": True, "nome": nome})
+            if url.path == "/api/apagar_conta":
+                d = self._corpo_json()
+                if d.get("confirmar") != "APAGAR":
+                    return self._json({"erro": "Digite APAGAR para confirmar."}, 400)
+                with TRAVA:
+                    ocupado = bool(FILA) or ATUAL.get("id")
+                if ocupado:
+                    return self._json({"erro": "Tem vídeo sendo editado. Espere terminar para apagar a conta."}, 409)
+                try:
+                    guard = apagar_conta(bool(d.get("manter_prontos")))
+                except ValueError as e:
+                    return self._json({"erro": str(e)}, 400)
+                return self._json({"ok": True, "guardados": str(guard) if guard else ""})
             if url.path == "/api/sair":
+                with TRAVA:
+                    ocupado = bool(FILA) or ATUAL.get("id")
+                if ocupado:
+                    return self._json({"erro": "Tem vídeo sendo editado. Espere terminar para sair da conta."}, 409)
                 gdrive.sair()
-                conta = ler(DADOS / "conta.json", {})
-                gravar(DADOS / "conta.json", {})
+                (DADOS_BASE / "conta_atual.json").unlink(missing_ok=True)
+                ativar_perfil(None)
                 return self._json({"ok": True})
 
             if url.path == "/api/novo":
@@ -1279,7 +1453,8 @@ class App(BaseHTTPRequestHandler):
                 else:
                     return self._json({"erro": "Origem de capa inválida."}, 400)
                 hexa = lambda v: v if isinstance(v, str) and re.fullmatch(r"#[0-9A-Fa-f]{6}", v) else None
-                extra = dict(titulo=d.get("titulo"), estilo=d.get("estilo") if d.get("estilo") in ("classico", "faixa", "cor", "caixa") else None,
+                extra = dict(titulo=d.get("titulo"), estilo=d.get("estilo") if d.get("estilo") in ("classico", "faixa", "cor", "caixa", "contorno", "destaque", "tarja", "minimal") else None,
+                             subtitulo=str(d["subtitulo"]).strip()[:60] if d.get("subtitulo") is not None else None,
                              posicao=d.get("posicao") if d.get("posicao") in ("baixo", "meio", "cima") else None,
                              cor=hexa(d.get("cor")), cor_caixa=hexa(d.get("cor_caixa")), cor_tag=hexa(d.get("cor_tag")),
                              tag=str(d["tag"])[:26] if d.get("tag") is not None else None,
@@ -1424,6 +1599,23 @@ class App(BaseHTTPRequestHandler):
                     if escolhida is None:
                         return self._json({"erro": "Não há outra música para trocar. Adicione músicas em Ajustes."}, 400)
                     refazer_final_em_segundo_plano(pid, "Trocando a música", musica=escolhida)
+                elif acao in ("cortar_trecho", "voltar_cortes"):
+                    import editor
+                    t = dir_projeto(pid) / "trabalho"
+                    if p.get("estado") != "previa":
+                        return self._json({"erro": "Só dá para cortar um vídeo esperando aprovação."}, 400)
+                    if not (t / "audio.json").exists() or not (t / "montagem.mp4").exists():
+                        return self._json({"erro": "Este vídeo foi feito numa versão antiga. Use Reprovar para refazer."}, 400)
+                    if acao == "cortar_trecho":
+                        try:
+                            de, ate = float(d["de"]), float(d["ate"])
+                        except (KeyError, TypeError, ValueError):
+                            return self._json({"erro": "Marque o começo e o fim do trecho."}, 400)
+                        refazer_final_em_segundo_plano(pid, "Cortando o trecho", antes=lambda cfg: editor.cortar_trecho(t, de, ate, cfg))
+                    else:
+                        if not (t / "montagem_original.mp4").exists():
+                            return self._json({"erro": "Este vídeo ainda não tem cortes para desfazer."}, 400)
+                        refazer_final_em_segundo_plano(pid, "Voltando ao vídeo original", antes=lambda cfg: editor.voltar_cortes(t))
                 elif acao == "tentar_de_novo":
                     atualizar(pid, estado="na_fila", etapa="Na fila", pct=0, erro=None)
                     enfileirar(pid)
@@ -1450,11 +1642,11 @@ class App(BaseHTTPRequestHandler):
                 elif d.get("onde") == "musicas":
                     abrir_no_sistema(MUSICAS)
                 elif d.get("onde") == "fontes":
-                    (PASTA / "Fontes").mkdir(exist_ok=True)
-                    abrir_no_sistema(PASTA / "Fontes")
+                    (PASTA_BASE / "Fontes").mkdir(exist_ok=True)
+                    abrir_no_sistema(PASTA_BASE / "Fontes")
                 elif d.get("onde") == "efeitos":
-                    (PASTA / "Efeitos").mkdir(exist_ok=True)
-                    abrir_no_sistema(PASTA / "Efeitos")
+                    (PASTA_BASE / "Efeitos").mkdir(exist_ok=True)
+                    abrir_no_sistema(PASTA_BASE / "Efeitos")
                 else:
                     abrir_no_sistema(PRONTOS)
                 return self._json({"ok": True})
@@ -1525,12 +1717,25 @@ class App(BaseHTTPRequestHandler):
             return self._json({"erro": mensagem_amigavel(e)}, 500)
 
 
+def _retomar_conta():
+    """Ao abrir o app, entra na área da conta que estava conectada (se o acesso ao Google ainda vale)."""
+    try:
+        email = ler(DADOS_BASE / "conta_atual.json", {}).get("email") or ler(DADOS_BASE / "conta.json", {}).get("email")
+        if email and logado():
+            ativar_perfil(email)
+            migrar_legado(email)
+            gravar(DADOS_BASE / "conta_atual.json", {"email": email})
+    except Exception:
+        traceback.print_exc()
+
+
 def main(abrir=True):
     _ligar_log()
-    (PASTA / "Efeitos").mkdir(exist_ok=True)
-    (PASTA / "Fontes").mkdir(exist_ok=True)
+    _retomar_conta()
+    (PASTA_BASE / "Efeitos").mkdir(exist_ok=True)
+    (PASTA_BASE / "Fontes").mkdir(exist_ok=True)
     import capa
-    capa.PASTAS_FONTES.append(str(PASTA / "Fontes"))
+    capa.PASTAS_FONTES.append(str(PASTA_BASE / "Fontes"))
     try:
         class Servidor(ThreadingHTTPServer):
             def handle_error(self, request, client_address):  # o navegador fecha conexões o tempo todo: não é erro

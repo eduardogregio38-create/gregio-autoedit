@@ -7,7 +7,7 @@ from PyInstaller.utils.hooks import collect_all
 RAIZ = Path(SPECPATH).parent
 datas, binaries, hidden = [], [], []
 for pacote in ("faster_whisper", "ctranslate2", "av", "onnxruntime", "tokenizers", "cv2",
-               "huggingface_hub", "requests", "tqdm", "certifi"):
+               "huggingface_hub", "requests", "tqdm", "certifi", "cryptography"):
     d, b, h = collect_all(pacote)
     datas += d; binaries += b; hidden += h
 

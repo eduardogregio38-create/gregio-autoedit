@@ -327,6 +327,95 @@ def refazer_final(nome, trabalho: Path, cfg, musica, ganho_musica_db=0.0, palavr
 refazer_audio = refazer_final
 
 
+def _tem_audio(arq):
+    out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=codec_type",
+                          "-of", "csv=p=0", str(arq)], capture_output=True, text=True).stdout
+    return "audio" in out
+
+
+def cortar_trecho(trabalho: Path, a: float, b: float, cfg):
+    """Tira o trecho [a, b] (em segundos) da montagem. A legenda, os efeitos, os nomes e a música acompanham.
+    Guarda a montagem original na primeira vez, para dar para voltar atrás. Devolve os segundos tirados."""
+    mont = trabalho / "montagem.mp4"
+    total = render.duracao(mont)
+    a, b = max(0.0, float(a)), min(total, float(b))
+    if b - a < 0.2:
+        raise ValueError("O trecho escolhido é curto demais.")
+    if a <= 0.05 and b >= total - 0.05:
+        raise ValueError("Não dá para cortar o vídeo inteiro.")
+    for nome in ("montagem.mp4", "legenda.json", "audio.json"):
+        orig = trabalho / (Path(nome).stem + "_original" + Path(nome).suffix)
+        if not orig.exists() and (trabalho / nome).exists():
+            (orig).write_bytes((trabalho / nome).read_bytes())
+    audio = _tem_audio(mont)
+    partes = []
+    if a > 0.05:
+        partes.append((0.0, a))
+    if b < total - 0.05:
+        partes.append((b, total))
+    fc, rotulos = [], ""
+    for i, (x, y) in enumerate(partes):
+        fc.append(f"[0:v]trim={x:.3f}:{y:.3f},setpts=PTS-STARTPTS[v{i}]")
+        rotulos += f"[v{i}]"
+        if audio:
+            fc.append(f"[0:a]atrim={x:.3f}:{y:.3f},asetpts=PTS-STARTPTS[a{i}]")
+            rotulos += f"[a{i}]"
+    fc.append(f"{rotulos}concat=n={len(partes)}:v=1:a={1 if audio else 0}[v]" + ("[a]" if audio else ""))
+    novo = trabalho / "_montagem_nova.mp4"
+    novo.unlink(missing_ok=True)
+    cmd = ["ffmpeg", "-y", "-hide_banner", "-v", "error", "-i", str(mont), "-filter_complex", ";".join(fc), "-map", "[v]"]
+    if audio:
+        cmd += ["-map", "[a]", "-c:a", "aac", "-b:a", "192k"]
+    cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "17", "-pix_fmt", "yuv420p", str(novo)]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0 or not novo.exists() or novo.stat().st_size < 1000:
+        raise RuntimeError("Não consegui cortar o trecho. O vídeo anterior foi mantido.")
+    dt = b - a
+
+    def mover(t):  # tempo antigo -> novo
+        return t if t <= a else (a if t < b else t - dt)
+
+    pj = trabalho / "legenda.json"
+    if pj.exists():
+        novas = []
+        for w in json.loads(pj.read_text(encoding="utf-8")):
+            meio = (w["s"] + w["e"]) / 2
+            if a <= meio <= b:
+                continue  # a palavra estava no trecho tirado
+            w = dict(w)
+            w["s"], w["e"] = round(mover(w["s"]), 3), round(max(mover(w["e"]), mover(w["s"]) + 0.05), 3)
+            novas.append(w)
+        pj.write_text(json.dumps(novas, ensure_ascii=False), encoding="utf-8")
+    pa = trabalho / "audio.json"
+    d = json.loads(pa.read_text(encoding="utf-8"))
+    if d.get("efeitos"):
+        d["efeitos"] = [[arq, round(mover(t), 3)] for arq, t in d["efeitos"] if not (a <= t <= b)]
+    if d.get("realces"):
+        d["realces"] = [[round(mover(x), 3), round(mover(y), 3)] for x, y in d["realces"] if mover(y) - mover(x) > 0.05]
+    if d.get("nomes"):
+        d["nomes"] = [[round(mover(x), 3), round(mover(y), 3), *r] for x, y, *r in d["nomes"] if mover(y) - mover(x) > 0.3]
+    if d.get("inicios"):
+        d["inicios"] = [round(mover(t), 3) for t in d["inicios"]]
+    if d.get("inicio_final") is not None:
+        d["inicio_final"] = round(mover(d["inicio_final"]), 3)
+    if d.get("fim_musica") is not None:
+        d["fim_musica"] = round(max(0.5, d["fim_musica"] - dt), 3)
+    pa.write_text(json.dumps(d), encoding="utf-8")
+    os.replace(novo, mont)
+    return dt
+
+
+def voltar_cortes(trabalho: Path):
+    """Desfaz todos os cortes de trecho: volta a montagem, a legenda e o áudio de antes do primeiro corte."""
+    ok = False
+    for nome in ("montagem.mp4", "legenda.json", "audio.json"):
+        orig = trabalho / (Path(nome).stem + "_original" + Path(nome).suffix)
+        if orig.exists():
+            os.replace(orig, trabalho / nome)
+            ok = True
+    return ok
+
+
 def editar(nome, videos, trabalho: Path, cfg, musica=None, encerramento=None, avisar=None, logo=None, titulo=None,
            cortes=None):
     """Faz tudo: análise, montagem e render. Devolve os arquivos e o estado."""

@@ -47,3 +47,33 @@ print("diferença", ImageChops.difference(a,b).getbbox())
 
 assert ImageChops.difference(a,b).getbbox(), "O vídeo não mudou depois de corrigir a legenda"
 print("OK: a correção da legenda chegou ao vídeo")
+
+# posição livre (arrastar a legenda): pos_y 0.2 leva o texto para perto do topo
+def centro_y(img):
+    px=img.load(); w,h=img.size; ys=[y for y in range(0,h,4) for x in range(0,w,8) if abs(px[x,y][0]-128)+abs(px[x,y][1]-128)+abs(px[x,y][2]-128)>150]
+    return sum(ys)/len(ys)/h if ys else None
+y_meio=centro_y(b)
+api("/api/legenda",{"id":pid,"estilo":{"fonte":fonte,"tamanho_ass":"grande","cor_texto":"#FFD400","cor_destaque":"#FF4F9A","pos_y":0.2,"maiusculas":True}})
+esperar(); quadro("topo")
+y_topo=centro_y(Image.open(S/"topo.png").convert("RGB"))
+print("centro do texto: meio",y_meio,"topo",y_topo)
+assert y_meio and y_topo and y_topo < y_meio-0.15, "A legenda não foi para a posição arrastada"
+print("OK: posição livre da legenda funciona")
+
+# corte de um trecho do meio: o vídeo encurta, a legenda acompanha e dá para voltar ao original
+def dur(arq):
+    return float(subprocess.run(["ffprobe","-v","error","-show_entries","format=duration","-of","default=nw=1:nk=1",str(arq)],capture_output=True,text=True).stdout)
+def video_atual():
+    r=urllib.request.Request(f"http://127.0.0.1:47999/api/arquivo?id={pid}&k=video",headers=H)
+    (S/"corte.mp4").write_bytes(urllib.request.urlopen(r).read()); return dur(S/"corte.mp4")
+antes=video_atual()
+api("/api/acao",{"acao":"cortar_trecho","id":pid,"de":1.0,"ate":2.0}); esperar()
+depois=video_atual(); pal2=json.loads((T/"legenda.json").read_text())
+print("duração antes/depois do corte",round(antes,2),round(depois,2),"palavras",[w["w"] for w in pal2])
+assert abs((antes-depois)-1.0)<0.25, "O trecho não foi tirado do vídeo"
+assert [w["w"] for w in pal2]==["OLA"], "A legenda não acompanhou o corte"
+api("/api/acao",{"acao":"voltar_cortes","id":pid}); esperar()
+volta=video_atual()
+print("depois de voltar ao original",round(volta,2))
+assert abs(volta-antes)<0.25, "Voltar ao original não restaurou o vídeo"
+print("OK: corte de trecho e volta ao original funcionam")

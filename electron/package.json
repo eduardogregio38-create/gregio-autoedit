@@ -1,7 +1,7 @@
 {
   "name": "gregio-autoedit",
   "productName": "Gregio AutoEdit",
-  "version": "2.5.1",
+  "version": "2.6.0",
   "description": "Edição automática de vídeos para Reels",
   "author": "Eduardo Gregio",
   "main": "main.js",

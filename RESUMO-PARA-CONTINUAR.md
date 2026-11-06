@@ -133,3 +133,33 @@ Pontos de atenção: fontes divertidas são baixadas no build (build/preparar.py
 - Pendente na 2.5.1: trocar o cliente OAuth do Google (segredo ficou exposto com o repo público), tirar credentials.json/google.json do repositório, restringir a chave de API.
 - Domínio gregioautoedit.com.br pago (Registro.br), DNS criado (4 A + CNAME www) apontando para GitHub Pages; falta ligar "Enforce HTTPS" quando o GitHub terminar a verificação. Repo do código voltou a ser privado em 05/11/2026 depois do build #12 (2.5.0).
 - Segurança 2.5.1: credentials.json e google.json saíram do repositório (.gitignore) e o build os cria a partir dos Secrets GOOGLE_CREDENCIAIS_JSON e GOOGLE_CFG_JSON (o build falha se faltarem). O código também aceita GREGIO_GOOGLE_CREDENCIAIS / GREGIO_GOOGLE_CFG por variável de ambiente. Upload só aceita vídeo/áudio/imagem, até 40 GB. Erros 500 não mostram texto técnico. Header Referrer-Policy. Pendente: criptografar token.json (hoje texto simples na pasta do usuário), CSP, limite de taxa, trocar o cliente OAuth antigo (o segredo continua no histórico do git).
+
+## Para a versão depois da 2.5.1 (pedido do Eduardo em 06/11)
+- Animações leves só em CSS: esqueleto de carregamento nas listas, entrada suave dos cards de vídeo (.25 s), abertura dos painéis com leve zoom (.18 s), tudo respeitando prefers-reduced-motion.
+- Build do instalador parar se o teste falhar (tirar continue-on-error do passo de testes) e incluir testes/teste_legenda.py.
+- Criptografar token.json do Google, CSP no servidor local, limite de pedidos.
+- Criar issues no GitHub com a lista do que falta.
+- Itens antigos: cortar na linha do tempo, desfazer/refazer, arrastar legenda, atalhos, mais modelos de capa, paleta do logo, subtítulo, prévia da grade do Instagram.
+- Jurídico (INPI, CNPJ/MEI, revisão de Termos e Privacidade): Eduardo adiou em 06/11 ('só bem mais pra frente'). Não puxar o assunto, salvo se o app passar a coletar mais dados (analytics, cobrança).
+- 2.6.0: botão "Apagar meus dados" nos Ajustes (Eduardo pediu em 06/11): hoje "Sair" só apaga token.json e conta.json; projetos, vídeos prontos, músicas, relatórios e preferências continuam e reaparecem no login seguinte. O botão deve: sair do Google, apagar pastas Projetos/Vídeos prontos/Músicas/Relatórios e a pasta de dados, abrir myaccount.google.com/permissions, pedir confirmação em duas etapas e oferecer manter os vídeos prontos. A pasta do Drive não é tocada.
+- 2.6.0, tela nova "Configurações" (pedido do Eduardo em 06/11): botão com engrenagem na barra superior. Aba "Ajustes" fica SÓ com ajustes do vídeo (legenda, fontes, cores, música, cortes, capa). Configurações recebe o que é do app/pessoa: nome de usuário, e-mail Google e Sair, pastas (vídeos prontos, destino no Drive), versão/atualização/tutorial/Ajuda e relatório, limpeza de arquivos de trabalho e, no fim da página, "Apagar minha conta e meus dados" (o botão "Apagar meus dados" sai dos Ajustes e vai para cá).
+
+## v2.5.2 (virou parte da 2.6.0): dados separados por conta do Google
+- Cada e-mail tem a sua área: Contas/<email> dentro de DADOS e de PASTA (projetos, vídeos prontos, músicas, aprendizado, logo, encerramento, relatórios).
+- Efeitos, fontes, log e acesso ao Google ficam na base (são do aplicativo).
+- Sair da conta é bloqueado enquanto há vídeo em edição; ao sair, o app vai para uma área vazia.
+- Arquivos da versão antiga migram uma única vez para a primeira conta que entrar (legado_migrado.json).
+- Teste: testes/teste_contas.py. Limites ainda abertos: token.json sem criptografia (2.6.0), apagar conta (2.6.0).
+
+
+## v2.6.0 (inclui tudo da 2.5.2)
+Feito e testado (testes/teste_contas.py, teste_legenda.py, teste_cenarios.py, mais UI com Playwright):
+- Dados por conta do Google (ver 2.5.2 acima). Sair/apagar conta bloqueados enquanto há vídeo em edição.
+- Tela Configurações (engrenagem): nome, conta e Sair, pastas, Drive, versão/atualização, uso, ajuda/tutorial, espaço (limpar arquivos de trabalho de vídeos aprovados) e "Apagar minha conta e meus dados" (confirmação dupla, opção de guardar os vídeos prontos em "Vídeos guardados/<email>", revoga o acesso no Google, apaga o padrão aprendido no Drive; vídeos do Drive não são tocados).
+- Segurança: token.json cifrado (Fernet; chave no Keychain/DPAPI via Electron safeStorage, env GREGIO_CHAVE_LOCAL; sem Electron usa chave_local.bin 0600), CSP no servidor (menos /picker), freio contra chave errada, permissões 0600. Dependência nova: cryptography (requirements.txt e gregio.spec).
+- Build para se qualquer teste falhar (contas, legenda, cenários).
+- Animações leves em CSS (entrada dos cartões, zoom dos painéis, esqueleto de carregamento), desligam com prefers-reduced-motion.
+- Editor de legenda: arrastar a legenda no vídeo (pos_y livre, ASS), desfazer/refazer (Ctrl+Z, Ctrl+Shift+Z), atalhos (espaço, J, L, I, O, Esc, Ctrl+Enter), corte de trecho na linha do tempo (editor.cortar_trecho; legenda, efeitos, nomes, realces e fim da música acompanham; "Voltar ao original").
+- Capas: estilos contorno, destaque, tarja e minimal; subtítulo; cores do logo (capa.paleta_do_logo); prévia da grade 3:4 do Instagram.
+Não feito / ideias para a 2.7 (abrir como issues quando o repo estiver privado): reordenar cenas na linha do tempo, mais motivos de reprovação, inglês/espanhol, Dropbox/OneDrive, Microsoft Store, vídeo de exemplo, subtítulo da capa já na primeira edição, teste em Mac e Windows reais (só testado no Linux).
+Cuidados: nunca testado com login real de dois e-mails; a cifra do token depende do Electron safeStorage nos Macs/Windows reais.

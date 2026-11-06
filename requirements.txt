@@ -4,3 +4,4 @@ numpy<2.3
 pillow
 certifi
 requests
+cryptography

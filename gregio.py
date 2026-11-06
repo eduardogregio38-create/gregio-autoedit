@@ -48,7 +48,7 @@ def preparar():
         sem_saida = sys.stdout is None or sys.stderr is None
         if sem_saida or not os.environ.get("GREGIO_CONSOLE"):
             import servidor  # noqa: F401  (cria a pasta de dados)
-            log = open(servidor.DADOS / "gregio.log", "a", encoding="utf-8", buffering=1)
+            log = open(servidor.DADOS_BASE / "gregio.log", "a", encoding="utf-8", buffering=1)
             if sem_saida or not sys.stdout.isatty():
                 sys.stdout = sys.stderr = log
 
