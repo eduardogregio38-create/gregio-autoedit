@@ -45,7 +45,7 @@ def srt_de_palavras(palavras, destino: Path, max_chars=32):
     for i, p in enumerate(palavras):
         texto = " ".join(x["w"] for x in atual + [p])
         pausa = atual and p["s"] - atual[-1]["e"] > 0.5
-        if atual and (len(texto) > max_chars or pausa):
+        if atual and (len(texto) > max_chars or pausa or p.get("b")):  # "b": quebra de linha pedida pela pessoa
             legendas.append(atual)
             atual = []
         atual.append(p)
@@ -94,7 +94,7 @@ def agrupar_palavras(palavras, max_chars=24):
     for p in palavras:
         texto = " ".join(x["w"] for x in atual + [p])
         pausa = atual and p["s"] - atual[-1]["e"] > 0.5
-        if atual and (len(texto) > max_chars or pausa):
+        if atual and (len(texto) > max_chars or pausa or p.get("b")):  # "b": quebra de linha pedida pela pessoa
             grupos.append(atual)
             atual = []
         atual.append(p)
@@ -104,6 +104,52 @@ def agrupar_palavras(palavras, max_chars=24):
     if atual:
         grupos.append(atual)
     return grupos
+
+
+def frases(palavras, max_chars=24):
+    """As linhas de legenda como aparecem no vídeo: [{n, i0, i1, ini, fim, texto}], com o índice das palavras de cada uma."""
+    out, i = [], 0
+    for n, g in enumerate(agrupar_palavras(palavras, max_chars)):
+        out.append({"n": n, "i0": i, "i1": i + len(g) - 1, "ini": round(g[0]["s"], 2), "fim": round(g[-1]["e"], 2),
+                    "texto": " ".join(x["w"] for x in g)})
+        i += len(g)
+    return out
+
+
+def editar_frases(palavras, edicoes, max_chars=24):
+    """Aplica textos novos a linhas inteiras. edicoes = {n: "texto novo"}.
+    Texto vazio apaga a linha. Enter no meio do texto quebra em duas linhas. Se o número de palavras for o mesmo,
+    cada palavra mantém o seu tempo; senão as palavras novas dividem o tempo da linha igualmente."""
+    palavras = [dict(p) for p in palavras]
+    fr = {f["n"]: f for f in frases(palavras, max_chars)}
+    for n in sorted((int(k) for k in edicoes), reverse=True):
+        f = fr.get(n)
+        if not f:
+            continue
+        linhas = [l.split() for l in str(edicoes[str(n)] if str(n) in edicoes else edicoes[n]).replace("\r", "").split("\n")]
+        linhas = [l for l in linhas if l]
+        tokens = [t[:60] for l in linhas for t in l]
+        i0, i1 = f["i0"], f["i1"]
+        if not tokens:
+            del palavras[i0:i1 + 1]
+            continue
+        velhas = palavras[i0:i1 + 1]
+        if len(linhas) == 1 and len(tokens) == len(velhas):
+            for p_, t in zip(velhas, tokens):
+                p_["w"] = t
+            continue
+        t0, t1 = velhas[0]["s"], velhas[-1]["e"]
+        passo = max(0.05, (t1 - t0) / len(tokens))
+        novas, k = [], 0
+        for li, l in enumerate(linhas):
+            for ti, t in enumerate(l):
+                nova = {"w": t, "s": round(t0 + k * passo, 3), "e": round(t0 + (k + 1) * passo, 3), "p": 1.0}
+                if li > 0 and ti == 0:
+                    nova["b"] = True
+                novas.append(nova)
+                k += 1
+        palavras[i0:i1 + 1] = novas
+    return palavras
 
 
 def _familia_fonte(arquivo, pasta_trabalho):

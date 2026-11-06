@@ -561,6 +561,24 @@ def enfileirar(pid):
 
 # ---------------- EDIÇÃO (fila, um vídeo por vez) ----------------
 
+def _estilo_valido(e):
+    """Só deixa passar campos de estilo de legenda conhecidos e com valor seguro."""
+    import re
+    out = {}
+    for k in ("cor_texto", "cor_destaque"):
+        if isinstance(e.get(k), str) and re.fullmatch(r"#[0-9A-Fa-f]{6}", e[k]):
+            out[k] = e[k]
+    if e.get("tamanho_ass") in ("pequena", "media", "grande"):
+        out["tamanho_ass"] = e["tamanho_ass"]
+    if e.get("posicao") in ("baixo", "meio"):
+        out["posicao"] = e["posicao"]
+    if isinstance(e.get("maiusculas"), bool):
+        out["maiusculas"] = e["maiusculas"]
+    if isinstance(e.get("fonte"), str) and e["fonte"] in {a for a, _ in opcoes_fonte()}:
+        out["fonte"] = e["fonte"]
+    return out
+
+
 def config_edicao(p=None):
     import editor
     ap = aprendizado()
@@ -577,6 +595,9 @@ def config_edicao(p=None):
         cfg["vocabulario"] = [l.strip() for l in cfg["vocabulario"].splitlines() if l.strip()]
     cfg["_pasta_efeitos"] = str(PASTA / "Efeitos")
     cfg["_nomes"] = (p or {}).get("nomes") or {}
+    est = (p or {}).get("legenda_estilo")
+    if isinstance(est, dict):
+        cfg.setdefault("legendas", {}).update(_estilo_valido(est))
     return cfg
 
 
@@ -1102,7 +1123,14 @@ class App(BaseHTTPRequestHandler):
             if url.path == "/api/legenda":
                 f = dir_projeto(q["id"]) / "trabalho" / "legenda.json"
                 palavras = ler(f, [])
-                return self._json({"palavras": [{"i": i, "w": w["w"]} for i, w in enumerate(palavras)]})
+                import exportar
+                mc = int(config_edicao(ler_projeto(q["id"])).get("legendas", {}).get("max_caracteres", 24))
+                lg = config_edicao(ler_projeto(q["id"])).get("legendas", {})
+                return self._json({"palavras": [{"i": i, "w": w["w"]} for i, w in enumerate(palavras)],
+                                   "frases": exportar.frases(palavras, mc),
+                                   "estilo": {k: lg.get(k) for k in ("fonte", "cor_texto", "cor_destaque", "tamanho_ass", "posicao", "maiusculas")},
+                                   "estilos_salvos": aprendizado().get("estilos_legenda", []),
+                                   "fontes": [list(o) for o in opcoes_fonte()]})
             if url.path == "/api/musicas":
                 return self._json({"musicas": lista_musicas()})
             if url.path == "/api/ouvir":
@@ -1272,10 +1300,27 @@ class App(BaseHTTPRequestHandler):
                 if not p or not f.exists() or p.get("estado") != "previa":
                     return self._json({"erro": "Não dá para corrigir a legenda deste vídeo agora."}, 400)
                 palavras = ler(f, [])
+                if d.get("frases"):
+                    import exportar
+                    mc = int(config_edicao(p).get("legendas", {}).get("max_caracteres", 24))
+                    palavras = exportar.editar_frases(palavras, d["frases"], mc)
                 for i, t in (d.get("edicoes") or {}).items():
                     i = int(i)
                     if 0 <= i < len(palavras) and str(t).strip():
                         palavras[i]["w"] = str(t).strip()[:60]
+                if isinstance(d.get("estilo"), dict):
+                    est = _estilo_valido(d["estilo"])
+                    atualizar(pid, legenda_estilo=est)
+                    if d.get("para_todos"):
+                        ap = aprendizado()
+                        ap.setdefault("prefs", {}).update({"legendas." + k: v for k, v in est.items()})
+                        salvar_aprendizado(ap)
+                    if d.get("salvar_como"):
+                        ap = aprendizado()
+                        lista = [x for x in ap.get("estilos_legenda", []) if x.get("nome") != str(d["salvar_como"])[:24]]
+                        lista.append({"nome": str(d["salvar_como"])[:24], "estilo": est})
+                        ap["estilos_legenda"] = lista[-12:]
+                        salvar_aprendizado(ap)
                 refazer_final_em_segundo_plano(pid, "Aplicando a correção da legenda", palavras=palavras)
                 return self._json({"ok": True})
 

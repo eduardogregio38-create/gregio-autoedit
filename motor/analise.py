@@ -237,23 +237,39 @@ def faixa_util(duracao, corte):
     return ini, fim
 
 
+def _sem_acento(t):
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFD", t.lower()) if unicodedata.category(c) != "Mn")
+
+
 def corrigir_vocabulario(palavras, vocab):
-    """Troca palavras que a transcrição errou parecido com um termo cadastrado (nome, marca, curso)."""
-    from difflib import get_close_matches
+    """Troca palavras que a transcrição errou parecido com um termo cadastrado (nome, marca, curso).
+    Ignora acento e maiúscula; cobre erros como 'Estenção' -> 'Extensão'."""
+    from difflib import SequenceMatcher
     termos = {}
     for v in vocab or []:
         v = (v or "").strip()
         if v and " " not in v:
-            termos[v.lower()] = v
+            termos[_sem_acento(v)] = v
     if not termos:
         return palavras
     saida = []
     for p in palavras:
         base = p["w"].strip(".,!?;:\"'")
-        cola = p["w"][len(base.rstrip()):] if p["w"].startswith(base) else ""
-        m = get_close_matches(base.lower(), list(termos), n=1, cutoff=0.8) if len(base) >= 4 else []
-        if m and base.lower() != termos[m[0]].lower():
-            p = dict(p, w=termos[m[0]] + cola)
+        cola = p["w"][len(base):] if p["w"].startswith(base) else ""
+        if len(base) >= 5:
+            chave = _sem_acento(base)
+            melhor, nota = None, 0.0
+            for k in termos:
+                r = SequenceMatcher(None, chave, k).ratio()
+                if r > nota:
+                    melhor, nota = k, r
+            if melhor and nota >= 0.74 and base != termos[melhor]:
+                if base[:1].isupper() and not termos[melhor][:1].isupper():
+                    nv = termos[melhor][:1].upper() + termos[melhor][1:]
+                else:
+                    nv = termos[melhor]
+                p = dict(p, w=nv + cola)
         saida.append(p)
     return saida
 

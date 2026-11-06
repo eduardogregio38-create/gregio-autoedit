@@ -103,5 +103,13 @@
     "cor_tag": "#E63843",
     "margem_segura": true
   },
-  "duracao_max_take_seg": 1800
+  "duracao_max_take_seg": 1800,
+  "vocabulario": [
+    "Extensão",
+    "Inovação",
+    "egressos",
+    "vestibular",
+    "matrícula",
+    "Pesquisa"
+  ]
 }

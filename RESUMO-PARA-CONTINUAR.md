@@ -119,3 +119,9 @@ Pontos de atenção: fontes divertidas são baixadas no build (build/preparar.py
 - Whisper base errava muito (legenda com erros). Agora: modelo small embutido (build/preparar.py baixa Systran/faster-whisper-small; fallback base), beam 5, cache de transcrição separado por modelo.
 - VERSAO do servidor vem do Electron (GREGIO_VERSAO). Log sem ConnectionResetError.
 - Para a 2.5: legenda por frase, estilos prontos, linha do tempo (só visual), desfazer/refazer, dividir/juntar frases, salvar estilo, arrastar legenda, atalhos; capas: mais modelos, paletas do logo, subtítulo, prévia da grade; checagem automática pós-edição.
+
+## v2.5.0
+- Tela nova "Editar legenda": lista por frases (busca, clique vai ate a frase, editar, Enter divide, apagar remove), abas Frases/Estilo, estilos prontos, fonte/tamanho/cores/posicao/maiusculas, salvar meu estilo, usar nos proximos videos, linha do tempo (legenda + musica) com cabeca de reproducao.
+- Servidor: /api/legenda aceita "estilo", "para_todos", "salvar_como"; estilo por video em projeto.json (legenda_estilo).
+- Vocabulario padrao + correcao sem acento (Estencao -> Extensao).
+- Testado: video real IMG_3077 de ponta a ponta (43,2 s, 1,4 s cortado, -13 LUFS), 6 cenarios, UI com Playwright.

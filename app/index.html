@@ -135,6 +135,33 @@ a{color:var(--acento)}
 .pref textarea{min-height:80px;max-width:360px}
 .pref input[type=color]{width:42px;height:32px;border:1px solid var(--linha);border-radius:6px;background:none;padding:2px}
 .grupo-pref{font-weight:700;margin:18px 0 2px;font-size:14px}
+
+.leg-grade{display:grid;grid-template-columns:minmax(220px,290px) 1fr;gap:18px;align-items:start}
+@media (max-width:760px){.leg-grade{grid-template-columns:1fr}}
+.leg-video video{width:100%;border-radius:12px;background:#000;max-height:56vh}
+.leg-linha{margin-top:10px;font-size:11px;color:var(--suave)}
+.leg-faixa{position:relative;height:26px;background:var(--fundo);border:1px solid var(--linha);border-radius:6px;margin-top:4px;overflow:hidden;cursor:pointer}
+.leg-faixa .b{position:absolute;top:3px;bottom:3px;background:var(--acento);opacity:.75;border-radius:3px}
+.leg-faixa .b.on{opacity:1;outline:2px solid var(--amarelo)}
+.leg-faixa.musica .b{background:var(--verde);top:8px;bottom:8px;opacity:.55}
+.leg-faixa .cab{position:absolute;top:0;bottom:0;width:2px;background:var(--vermelho);z-index:2;pointer-events:none}
+.leg-abas{display:flex;gap:6px;margin-bottom:10px}
+.leg-abas button{flex:1}
+.leg-abas button.on{background:var(--acento);color:#fff;border-color:var(--acento)}
+.leg-busca{margin-bottom:8px}
+.leg-lista{max-height:46vh;overflow:auto;display:flex;flex-direction:column;gap:6px}
+.leg-frase{display:flex;gap:8px;align-items:flex-start;background:var(--fundo);border:1px solid var(--linha);border-radius:10px;padding:6px 8px}
+.leg-frase.on{border-color:var(--acento);box-shadow:0 0 0 2px #5b3df533}
+.leg-frase .n{font-size:12px;color:var(--suave);min-width:22px;padding-top:7px;cursor:pointer}
+.leg-frase .t{font-size:11px;color:var(--suave);padding-top:8px;min-width:38px;cursor:pointer}
+.leg-frase textarea{flex:1;border:0;background:transparent;color:var(--texto);font:inherit;font-size:15px;resize:none;padding:4px;min-height:30px;outline:none}
+.leg-frase .x{background:none;border:0;color:var(--suave);cursor:pointer;font-size:16px;padding:4px}
+.leg-estilos{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.leg-estilos button{border:2px solid var(--linha);background:#222;border-radius:10px;padding:12px 4px;cursor:pointer;font-size:20px;font-weight:800}
+.leg-estilos button.on{border-color:var(--acento)}
+.leg-campo{display:flex;align-items:center;gap:10px;margin:8px 0;font-size:14px}
+.leg-campo label{min-width:92px;color:var(--suave)}
+.leg-campo select,.leg-campo input[type=color]{flex:1}
 .legenda-grupos{display:flex;flex-direction:column;gap:8px;max-height:50vh;overflow:auto;margin:10px 0}
 .legenda-grupos .g{display:flex;gap:6px;flex-wrap:wrap;background:var(--fundo);border:1px solid var(--linha);border-radius:10px;padding:8px}
 .legenda-grupos input{width:auto;padding:5px 7px;font-size:14px;border-radius:6px;min-width:30px}
@@ -385,11 +412,37 @@ a{color:var(--acento)}
   <div class="botoes"><button class="botao" id="capa-ok">Usar esta capa</button><button class="botao claro" id="capa-fechar">Fechar</button></div>
 </div></div>
 
-<div class="fundo-modal" id="modal-legenda"><div class="modal" style="max-width:680px">
-  <h3>Corrigir a legenda</h3>
-  <p class="sub" style="margin-bottom:0">Mude só as palavras que estão erradas. O vídeo é refeito em segundos, sem renderizar as cenas de novo.</p>
-  <div class="legenda-grupos" id="legenda-grupos"></div>
-  <div class="botoes"><button class="botao" id="legenda-ok">Aplicar correções</button><button class="botao claro" id="legenda-fechar">Fechar</button></div>
+<div class="fundo-modal" id="modal-legenda"><div class="modal" style="max-width:940px">
+  <h3 style="margin-bottom:4px">Editar legenda</h3>
+  <p class="sub" style="margin-top:0">Clique numa frase para ir até ela no vídeo. Mudou? Aperte "Aplicar": o vídeo é refeito em segundos, sem renderizar as cenas de novo.</p>
+  <div class="leg-grade">
+    <div class="leg-video">
+      <video id="leg-video" controls playsinline preload="auto"></video>
+      <div class="leg-linha">Legenda<div class="leg-faixa" id="leg-faixa"></div>
+        <span id="leg-mus-rot">Música</span><div class="leg-faixa musica" id="leg-musica"></div></div>
+    </div>
+    <div>
+      <div class="leg-abas"><button class="botao claro pequeno on" id="aba-frases">Frases</button><button class="botao claro pequeno" id="aba-estilo">Estilo</button></div>
+      <div id="painel-frases">
+        <input type="text" id="leg-busca" class="leg-busca" placeholder="Buscar palavra na legenda">
+        <div class="leg-lista" id="leg-lista"></div>
+        <p class="sub" style="font-size:12px;margin:6px 0 0">Enter divide a frase em duas linhas. Apagar tudo remove a frase.</p>
+      </div>
+      <div id="painel-estilo" style="display:none">
+        <div class="leg-estilos" id="leg-presets"></div>
+        <div class="leg-campo"><label>Fonte</label><select id="est-fonte"></select></div>
+        <div class="leg-campo"><label>Tamanho</label><select id="est-tam"><option value="pequena">Pequena</option><option value="media">Média</option><option value="grande">Grande</option></select></div>
+        <div class="leg-campo"><label>Cor do texto</label><input type="color" id="est-cor"></div>
+        <div class="leg-campo"><label>Cor do destaque</label><input type="color" id="est-dest"></div>
+        <div class="leg-campo"><label>Posição</label><select id="est-pos"><option value="baixo">Embaixo</option><option value="meio">No meio</option></select></div>
+        <div class="leg-campo"><label>Letras</label><select id="est-caixa"><option value="n">Como falado</option><option value="s">MAIÚSCULAS</option></select></div>
+        <div class="leg-campo"><label>Meus estilos</label><select id="est-salvos"><option value="">Escolher…</option></select></div>
+        <div class="botoes" style="justify-content:flex-start"><input type="text" id="est-nome" placeholder="Nome do estilo" maxlength="24" style="width:140px;padding:6px 8px"><button class="botao claro pequeno" id="est-salvar">Salvar como meu estilo</button>
+          <label style="font-size:13px"><input type="checkbox" id="est-todos"> Usar nos próximos vídeos</label></div>
+      </div>
+    </div>
+  </div>
+  <div class="botoes"><button class="botao" id="legenda-ok">Aplicar</button><button class="botao claro" id="legenda-fechar">Fechar</button></div>
 </div></div>
 
 <div class="fundo-modal" id="modal-musica"><div class="modal">
@@ -929,25 +982,98 @@ $("#capa-ok").onclick = async ()=>{
   $("#capa-ok").disabled = false;
 };
 
-// ---------- corrigir legenda ----------
-let LEG = {id:null, orig:{}};
+// ---------- editar legenda (lista por frases, estilo e linha do tempo) ----------
+let LEG = {id:null, frases:[], orig:"", estilo:{}, estiloOrig:"", dur:1};
+const PRESETS = [
+  {n:"Amarelo", e:{cor_texto:"#FFFFFF", cor_destaque:"#FFD400", maiusculas:false}, c:"#FFD400"},
+  {n:"Branco", e:{cor_texto:"#FFFFFF", cor_destaque:"#FFFFFF", maiusculas:false}, c:"#FFFFFF"},
+  {n:"Verde", e:{cor_texto:"#FFFFFF", cor_destaque:"#3DDC84", maiusculas:true}, c:"#3DDC84"},
+  {n:"Rosa", e:{cor_texto:"#FFFFFF", cor_destaque:"#FF4F9A", maiusculas:true}, c:"#FF4F9A"},
+  {n:"Azul", e:{cor_texto:"#FFFFFF", cor_destaque:"#4DB8FF", maiusculas:false}, c:"#4DB8FF"},
+  {n:"Fogo", e:{cor_texto:"#FFD400", cor_destaque:"#FF5A1F", maiusculas:true}, c:"#FF5A1F"},
+];
+const fmtT = t => { t=Math.max(0,t); return Math.floor(t/60)+":"+String(Math.floor(t%60)).padStart(2,"0"); };
+function legEstiloLer(){
+  return {fonte:$("#est-fonte").value, tamanho_ass:$("#est-tam").value, cor_texto:$("#est-cor").value, cor_destaque:$("#est-dest").value,
+          posicao:$("#est-pos").value, maiusculas:$("#est-caixa").value==="s"};
+}
+function legEstiloPor(e){
+  if (e.fonte) $("#est-fonte").value = e.fonte;
+  if (e.tamanho_ass) $("#est-tam").value = e.tamanho_ass;
+  if (e.cor_texto) $("#est-cor").value = e.cor_texto;
+  if (e.cor_destaque) $("#est-dest").value = e.cor_destaque;
+  if (e.posicao) $("#est-pos").value = e.posicao;
+  if (typeof e.maiusculas==="boolean") $("#est-caixa").value = e.maiusculas ? "s" : "n";
+}
+function legDesenharFaixa(){
+  const d = LEG.dur || 1;
+  $("#leg-faixa").innerHTML = '<div class="cab" id="leg-cab" style="left:0"></div>' + LEG.frases.map((f,k)=>
+    `<div class="b" data-k="${k}" style="left:${f.ini/d*100}%;width:${Math.max(0.6,(f.fim-f.ini)/d*100)}%" title="${esc(f.texto)}"></div>`).join("");
+  $("#leg-musica").innerHTML = '<div class="b" style="left:0;width:100%"></div>';
+}
+function legDesenharLista(){
+  const q = $("#leg-busca").value.trim().toLowerCase();
+  $("#leg-lista").innerHTML = LEG.frases.map((f,k)=> (q && !f.texto.toLowerCase().includes(q)) ? "" :
+    `<div class="leg-frase" data-k="${k}"><span class="n">${k+1}</span><span class="t">${fmtT(f.ini)}</span>
+      <textarea rows="1" data-k="${k}">${esc(f.texto)}</textarea><button class="x" data-k="${k}" title="Apagar frase">×</button></div>`).join("")
+    || '<div class="vazio">Nada encontrado.</div>';
+  document.querySelectorAll("#leg-lista textarea").forEach(t=>{ t.style.height="auto"; t.style.height=t.scrollHeight+"px"; });
+}
 async function abrirLegenda(id){
-  LEG = {id, orig:{}};
-  try{ const {palavras} = await api("/api/legenda?id="+id);
-    if (!palavras.length) return toast("Este vídeo não tem legenda para corrigir.");
-    const grupos = []; for (let i=0;i<palavras.length;i+=6) grupos.push(palavras.slice(i,i+6));
-    palavras.forEach(w=>LEG.orig[w.i]=w.w);
-    $("#legenda-grupos").innerHTML = grupos.map(g=>`<div class="g">${g.map(w=>`<input type="text" data-i="${w.i}" value="${esc(w.w)}" size="${Math.max(3, w.w.length+1)}">`).join("")}</div>`).join("");
+  LEG = {id, frases:[], orig:"", estilo:{}, estiloOrig:"", dur:1};
+  try{ const r = await api("/api/legenda?id="+id);
+    if (!r.frases.length) return toast("Este vídeo não tem legenda para corrigir.");
+    LEG.frases = r.frases.map(f=>({...f})); LEG.orig = JSON.stringify(r.frases.map(f=>f.texto));
+    $("#est-fonte").innerHTML = r.fontes.map(([a,n])=>`<option value="${esc(a)}">${esc(n)}</option>`).join("");
+    $("#est-salvos").innerHTML = '<option value="">Escolher…</option>' + (r.estilos_salvos||[]).map((x,i)=>`<option value="${i}">${esc(x.nome)}</option>`).join("");
+    LEG.salvos = r.estilos_salvos||[];
+    legEstiloPor(r.estilo||{}); LEG.estiloOrig = JSON.stringify(legEstiloLer());
+    $("#leg-presets").innerHTML = PRESETS.map((x,i)=>`<button data-i="${i}" style="color:${x.c}" title="${x.n}">Aa</button>`).join("");
+    const v = $("#leg-video"); v.src = midia({id}, "video") + "&v=" + Date.now();
+    v.onloadedmetadata = ()=>{ LEG.dur = v.duration || 1; legDesenharFaixa(); };
+    LEG.dur = r.frases[r.frases.length-1].fim + 0.5; legDesenharFaixa(); legDesenharLista();
+    $("#leg-busca").value = ""; legAba("frases");
     $("#modal-legenda").style.display = "flex";
   }catch(e){ toast("Erro: "+e.message); }
 }
-$("#legenda-fechar").onclick = ()=> $("#modal-legenda").style.display = "none";
-$("#legenda-ok").onclick = async ()=>{
-  const edicoes = {}; document.querySelectorAll("#legenda-grupos input").forEach(i=>{ if (i.value.trim() && i.value!==LEG.orig[i.dataset.i]) edicoes[i.dataset.i] = i.value.trim(); });
-  if (!Object.keys(edicoes).length){ $("#modal-legenda").style.display = "none"; return; }
-  try{ await api("/api/legenda", {id:LEG.id, edicoes}); $("#modal-legenda").style.display = "none"; toast("Aplicando a correção. Em instantes o vídeo volta atualizado."); chavePrevias=""; atualizar(); }
+function legAba(a){
+  $("#painel-frases").style.display = a==="frases" ? "" : "none";
+  $("#painel-estilo").style.display = a==="estilo" ? "" : "none";
+  $("#aba-frases").classList.toggle("on", a==="frases"); $("#aba-estilo").classList.toggle("on", a==="estilo");
+}
+$("#aba-frases").onclick = ()=>legAba("frases"); $("#aba-estilo").onclick = ()=>legAba("estilo");
+$("#leg-busca").oninput = legDesenharLista;
+function legIr(k){ const f = LEG.frases[k]; if (!f) return; const v=$("#leg-video"); v.currentTime = f.ini; 
+  document.querySelectorAll(".leg-frase").forEach(e=>e.classList.toggle("on", +e.dataset.k===k));
+  document.querySelectorAll("#leg-faixa .b").forEach(e=>e.classList.toggle("on", +e.dataset.k===k)); }
+$("#leg-lista").addEventListener("click", e=>{
+  const k = +(e.target.dataset.k ?? e.target.closest(".leg-frase")?.dataset.k);
+  if (e.target.classList.contains("x")){ LEG.frases[k].texto = ""; e.target.closest(".leg-frase").style.opacity = .35; e.target.closest(".leg-frase").querySelector("textarea").value = ""; return; }
+  if (!isNaN(k)) legIr(k);
+});
+$("#leg-lista").addEventListener("input", e=>{ if (e.target.tagName==="TEXTAREA"){ LEG.frases[+e.target.dataset.k].texto = e.target.value; e.target.style.height="auto"; e.target.style.height=e.target.scrollHeight+"px"; } });
+$("#leg-lista").addEventListener("keydown", e=>{ if (e.key==="Enter" && e.target.tagName==="TEXTAREA"){ /* Enter = nova linha dentro da frase (divide) */ } });
+$("#leg-faixa").onclick = e=>{ const r = e.currentTarget.getBoundingClientRect(); $("#leg-video").currentTime = (e.clientX-r.left)/r.width*LEG.dur;
+  const b = e.target.closest(".b"); if (b){ legIr(+b.dataset.k); document.querySelector(`.leg-frase[data-k="${b.dataset.k}"]`)?.scrollIntoView({block:"nearest"}); } };
+$("#leg-video").ontimeupdate = ()=>{ const t=$("#leg-video").currentTime, c=$("#leg-cab"); if (c) c.style.left = (t/LEG.dur*100)+"%";
+  const k = LEG.frases.findIndex(f=>t>=f.ini && t<=f.fim+0.05);
+  document.querySelectorAll(".leg-frase").forEach(e=>e.classList.toggle("on", +e.dataset.k===k)); };
+$("#leg-presets").onclick = e=>{ const b=e.target.closest("button"); if(!b) return; legEstiloPor(PRESETS[+b.dataset.i].e);
+  document.querySelectorAll("#leg-presets button").forEach(x=>x.classList.toggle("on", x===b)); };
+$("#est-salvos").onchange = e=>{ const x = LEG.salvos[+e.target.value]; if (x) legEstiloPor(x.estilo); };
+$("#legenda-fechar").onclick = ()=>{ $("#leg-video").pause(); $("#modal-legenda").style.display = "none"; };
+async function legEnviar(extra={}){
+  const frases = {}; LEG.frases.forEach((f,k)=>{ const orig = JSON.parse(LEG.orig)[k]; if (f.texto!==orig) frases[f.n] = f.texto; });
+  const est = legEstiloLer(); const mudouEstilo = JSON.stringify(est)!==LEG.estiloOrig || extra.salvar_como;
+  if (!Object.keys(frases).length && !mudouEstilo){ $("#modal-legenda").style.display = "none"; return; }
+  const corpo = {id:LEG.id, ...extra}; if (Object.keys(frases).length) corpo.frases = frases;
+  if (mudouEstilo){ corpo.estilo = est; if ($("#est-todos").checked) corpo.para_todos = true; }
+  try{ await api("/api/legenda", corpo); $("#leg-video").pause(); $("#modal-legenda").style.display = "none";
+    toast("Aplicando. Em instantes o vídeo volta atualizado."); chavePrevias=""; atualizar(); }
   catch(e){ toast("Erro: "+e.message); }
-};
+}
+$("#legenda-ok").onclick = ()=>legEnviar();
+$("#est-salvar").onclick = ()=>{ const nome = $("#est-nome").value.trim(); if (!nome) return toast("Escreva um nome para o estilo."); legEnviar({salvar_como:nome}); };
 
 // ---------- trocar a música ----------
 let MUS = {id:null};
