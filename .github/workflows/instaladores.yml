@@ -43,6 +43,7 @@ jobs:
         shell: bash
         run: |
           export PATH="$PWD/bin:$PATH"
+          python testes/teste_filtros.py
           python testes/teste_contas.py
           python testes/teste_legenda.py
           python testes/teste_cenarios.py

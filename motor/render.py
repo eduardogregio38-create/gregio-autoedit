@@ -1,6 +1,7 @@
 """Renderização com FFmpeg: blocos tratados, transições, música e legendas."""
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -204,7 +205,7 @@ def filtro_video(cfg, larg_src, alt_src, tag="x", hdr=False, brilho=None, estabi
     W, H = tamanho(cfg)
     pre = _tonemap() if hdr else ""
     if estabilizar and cfg.get("video", {}).get("estabilizar", False):
-        pre += "deshake=rx=24:ry=24:edge=mirror,"
+        pre += "deshake=rx=32:ry=32:edge=mirror,"
     v = cfg.get("video", {})
     if brilho is not None and brilho < 0.30 and v.get("melhorar_escuro", True):  # take escuro: clareia e tira granulação
         pre += "hqdn3d=3:3:5:5,eq=gamma=1.25:brightness=0.04:contrast=1.05,"
@@ -309,7 +310,17 @@ def render_bloco(bloco, indice, pasta: Path, cfg):
         "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
         "-movflags", "+faststart", str(destino),
     ]
-    run(cmd)
+    try:
+        run(cmd)
+    except RuntimeError:
+        # alguns FFmpeg recusam o filtro de estabilização; refaz sem ele em vez de derrubar a edição inteira
+        i = cmd.index("-filter_complex") + 1
+        sem = re.sub(r"deshake=[^,]*,", "", cmd[i])
+        if sem == cmd[i]:
+            raise
+        print("  estabilização não funcionou neste computador; seguindo sem ela")
+        cmd[i] = sem
+        run(cmd)
 
     # áudio limpo em WAV, usado na timeline do Premiere/DaVinci
     wav = destino.with_suffix(".wav")

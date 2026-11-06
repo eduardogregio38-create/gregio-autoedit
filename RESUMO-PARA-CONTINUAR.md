@@ -163,3 +163,6 @@ Feito e testado (testes/teste_contas.py, teste_legenda.py, teste_cenarios.py, ma
 - Capas: estilos contorno, destaque, tarja e minimal; subtítulo; cores do logo (capa.paleta_do_logo); prévia da grade 3:4 do Instagram.
 Não feito / ideias para a 2.7 (abrir como issues quando o repo estiver privado): reordenar cenas na linha do tempo, mais motivos de reprovação, inglês/espanhol, Dropbox/OneDrive, Microsoft Store, vídeo de exemplo, subtítulo da capa já na primeira edição, teste em Mac e Windows reais (só testado no Linux).
 Cuidados: nunca testado com login real de dois e-mails; a cifra do token depende do Electron safeStorage nos Macs/Windows reais.
+
+## v2.6.1 (correção)
+- Vídeos do iPhone com imagens de apoio falhavam no Mac: o FFmpeg de lá recusa deshake com rx=24 ("rx must be a multiple of 16"). Agora usa rx=32:ry=32 e, se o filtro ainda falhar, refaz o bloco sem estabilização em vez de derrubar a edição. Teste: testes/teste_filtros.py (também no build).
