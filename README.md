@@ -15,7 +15,7 @@ Crie uma tag `vX.Y` (ou rode o workflow "Instaladores" à mão). O GitHub gera:
 `Gregio-AutoEdit-Mac-Intel.zip`, `Gregio-AutoEdit-Mac-AppleSilicon.zip` e `Gregio-AutoEdit-Windows-Instalador.exe`.
 
 ## Login do Google
-`app/credentials.json` (cliente OAuth "App para computador") e `app/google.json` (`api_key` e `app_id` do
+`app/credentials.json` (NÃO vai para o git; no build vem dos Secrets GOOGLE_CREDENCIAIS_JSON e GOOGLE_CFG_JSON do GitHub) (cliente OAuth "App para computador") e `app/google.json` (`api_key` e `app_id` do
 seletor de pastas) vêm do projeto do Google Cloud do dono do app. Escopo: `drive.file` (o app só vê o que ele criou
 ou o que a pessoa escolheu no seletor).
 

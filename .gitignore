@@ -6,3 +6,10 @@ __pycache__/
 *.pyc
 teste/
 resultado/
+
+# segredos: nunca no git (no build vêm dos Secrets do GitHub)
+app/credentials.json
+app/google.json
+token.json
+*.env
+.env

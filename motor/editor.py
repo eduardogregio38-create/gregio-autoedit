@@ -314,8 +314,13 @@ def refazer_final(nome, trabalho: Path, cfg, musica, ganho_musica_db=0.0, palavr
                              [tuple(n) for n in d.get("nomes", [])], d.get("texto_final") or None, d.get("inicio_final"))
     inicio_m = ritmo.ponto_inicial(musica) if musica and cfg["audio"].get("musica_ponto_certo", True) else 0.0
     final = trabalho / f"{nome}.mp4"
-    render.finalizar(trabalho / "montagem.mp4", musica, srt, final, cfg, d.get("fim_musica"), d.get("realces"),
+    novo = trabalho / f"_novo_{nome}.mp4"
+    novo.unlink(missing_ok=True)
+    render.finalizar(trabalho / "montagem.mp4", musica, srt, novo, cfg, d.get("fim_musica"), d.get("realces"),
                      [(Path(a), t) for a, t in d.get("efeitos", [])], inicio_m, ganho_musica_db, ass)
+    if not novo.exists() or novo.stat().st_size < 1000:
+        raise RuntimeError("O vídeo novo não foi gerado. O vídeo anterior foi mantido.")
+    os.replace(novo, final)  # troca de uma vez, o vídeo antigo só some quando o novo está inteiro
     return final
 
 

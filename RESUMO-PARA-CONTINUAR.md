@@ -125,3 +125,11 @@ Pontos de atenção: fontes divertidas são baixadas no build (build/preparar.py
 - Servidor: /api/legenda aceita "estilo", "para_todos", "salvar_como"; estilo por video em projeto.json (legenda_estilo).
 - Vocabulario padrao + correcao sem acento (Estencao -> Extensao).
 - Testado: video real IMG_3077 de ponta a ponta (43,2 s, 1,4 s cortado, -13 LUFS), 6 cenarios, UI com Playwright.
+
+## v2.5.1 (em preparo)
+- Corrigir legenda: o vídeo agora é trocado só quando o novo está inteiro (arquivo temporário + os.replace), o estado "editando" é marcado já no pedido (a tela não relê o vídeo antigo) e a versão do vídeo na tela vem da hora do arquivo (sem cache velho).
+- GET /api/legenda devolve valores padrão (cor do texto, tamanho, posição) em vez de vazio, para a tela mostrar o que está de fato no vídeo.
+- Novo teste de ponta a ponta: testes/teste_legenda.py (servidor de verdade, troca palavra/cor/tamanho/posição e confere que o quadro mudou).
+- Pendente na 2.5.1: trocar o cliente OAuth do Google (segredo ficou exposto com o repo público), tirar credentials.json/google.json do repositório, restringir a chave de API.
+- Domínio gregioautoedit.com.br pago (Registro.br), DNS criado (4 A + CNAME www) apontando para GitHub Pages; falta ligar "Enforce HTTPS" quando o GitHub terminar a verificação. Repo do código voltou a ser privado em 05/11/2026 depois do build #12 (2.5.0).
+- Segurança 2.5.1: credentials.json e google.json saíram do repositório (.gitignore) e o build os cria a partir dos Secrets GOOGLE_CREDENCIAIS_JSON e GOOGLE_CFG_JSON (o build falha se faltarem). O código também aceita GREGIO_GOOGLE_CREDENCIAIS / GREGIO_GOOGLE_CFG por variável de ambiente. Upload só aceita vídeo/áudio/imagem, até 40 GB. Erros 500 não mostram texto técnico. Header Referrer-Policy. Pendente: criptografar token.json (hoje texto simples na pasta do usuário), CSP, limite de taxa, trocar o cliente OAuth antigo (o segredo continua no histórico do git).

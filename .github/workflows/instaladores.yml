@@ -43,6 +43,17 @@ jobs:
         continue-on-error: true
         shell: bash
         run: PATH="$PWD/bin:$PATH" python testes/teste_cenarios.py
+      - name: Credenciais do Google (vêm dos Secrets do GitHub, nunca do código)
+        shell: bash
+        env:
+          GOOGLE_CREDENCIAIS_JSON: ${{ secrets.GOOGLE_CREDENCIAIS_JSON }}
+          GOOGLE_CFG_JSON: ${{ secrets.GOOGLE_CFG_JSON }}
+        run: |
+          if [ -z "$GOOGLE_CREDENCIAIS_JSON" ] || [ -z "$GOOGLE_CFG_JSON" ]; then
+            echo "Faltam os Secrets GOOGLE_CREDENCIAIS_JSON e GOOGLE_CFG_JSON no GitHub (Settings > Secrets and variables > Actions)."; exit 1
+          fi
+          printf '%s' "$GOOGLE_CREDENCIAIS_JSON" > app/credentials.json
+          printf '%s' "$GOOGLE_CFG_JSON" > app/google.json
       - name: Empacotar o motor de edição
         run: pyinstaller --noconfirm --clean --distpath dist --workpath work build/gregio.spec
 

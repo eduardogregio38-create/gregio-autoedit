@@ -93,7 +93,9 @@ def requisicao(metodo, url, corpo=None, cabecalhos=None, destino=None, seguir=3)
 
 
 def _credenciais():
-    d = json.loads(CREDENCIAIS.read_text(encoding="utf-8"))
+    # a credencial vem da variável de ambiente GREGIO_GOOGLE_CREDENCIAIS (ou do arquivo local, que fica fora do git)
+    texto = os.environ.get("GREGIO_GOOGLE_CREDENCIAIS")
+    d = json.loads(texto) if texto else json.loads(CREDENCIAIS.read_text(encoding="utf-8"))
     return d.get("installed") or d.get("web")
 
 

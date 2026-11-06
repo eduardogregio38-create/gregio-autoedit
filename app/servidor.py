@@ -280,6 +280,12 @@ def logado():
 
 
 def google_cfg():
+    texto = os.environ.get("GREGIO_GOOGLE_CFG")  # chave de API vem do ambiente (ou do arquivo local fora do git)
+    if texto:
+        try:
+            return json.loads(texto)
+        except ValueError:
+            return {}
     return ler(AQUI / "google.json", {})
 
 
@@ -765,11 +771,11 @@ def foto_de_imagem(origem, destino):
 def refazer_final_em_segundo_plano(pid, etapa, musica=None, palavras=None):
     """Troca a música e/ou corrige a legenda sem renderizar as cenas de novo."""
     import editor
+    _estado_ocupado(pid, etapa)
 
     def tarefa():
         p = ler_projeto(pid)
         try:
-            _estado_ocupado(pid, etapa)
             cfg = config_edicao(p)
             m = musica if musica is not None else (Path(p["musica_arq"]) if p.get("musica_arq") else None)
             if m is not None and not Path(m).exists():
@@ -909,6 +915,9 @@ def aprovar_e_enviar(pid):
 
 # ---------------- SERVIDOR HTTP ----------------
 
+LIMITE_UPLOAD = 40 * 1024 ** 3  # 40 GB por arquivo
+EXT_PERMITIDAS = set(VIDEO_EXT) | {".mp3", ".m4a", ".wav", ".aac", ".jpg", ".jpeg", ".png", ".webp", ".heic"}
+
 TIPOS = {".mp4": "video/mp4", ".mov": "video/quicktime", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
          ".png": "image/png", ".srt": "text/plain; charset=utf-8", ".zip": "application/zip",
          ".html": "text/html; charset=utf-8", ".svg": "image/svg+xml", ".mp3": "audio/mpeg",
@@ -921,6 +930,12 @@ def visao(p):
                                  "erro", "erro_drive", "duracao", "segundos", "drive_link", "criado",
                                  "aprovado_em", "musica_nome", "n_takes", "modo", "resumo", "receita", "rev")}
     v["n_capas"] = len(p.get("capas_info") or [])
+    try:
+        arq = (p.get("arquivos") or {}).get("video")
+        if arq and Path(arq).exists():
+            v["rev"] = max(int(p.get("rev") or 0), int(Path(arq).stat().st_mtime * 1000))
+    except Exception:
+        pass
     v["pode_ajustar"] = (dir_projeto(p["id"]) / "trabalho" / "audio.json").exists() and \
         (dir_projeto(p["id"]) / "trabalho" / "montagem.mp4").exists()
     v["tem"] = {k: True for k in (p.get("arquivos") or {})}
@@ -998,6 +1013,8 @@ class App(BaseHTTPRequestHandler):
 
     def _receber(self, alvo):
         tam = int(self.headers.get("Content-Length", 0) or 0)
+        if tam > LIMITE_UPLOAD:
+            raise ValueError("Arquivo grande demais (limite de %d GB)." % (LIMITE_UPLOAD // 1024 ** 3))
         alvo.parent.mkdir(parents=True, exist_ok=True)
         tmp = alvo.with_name(alvo.name + ".part")
         with open(tmp, "wb") as f:
@@ -1039,6 +1056,7 @@ class App(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
         super().end_headers()
 
     def do_HEAD(self):
@@ -1128,7 +1146,9 @@ class App(BaseHTTPRequestHandler):
                 lg = config_edicao(ler_projeto(q["id"])).get("legendas", {})
                 return self._json({"palavras": [{"i": i, "w": w["w"]} for i, w in enumerate(palavras)],
                                    "frases": exportar.frases(palavras, mc),
-                                   "estilo": {k: lg.get(k) for k in ("fonte", "cor_texto", "cor_destaque", "tamanho_ass", "posicao", "maiusculas")},
+                                   "estilo": {k: (lg.get(k) if lg.get(k) is not None else d) for k, d in (
+                                       ("fonte", "Poppins-Bold.ttf"), ("cor_texto", "#FFFFFF"), ("cor_destaque", "#FFD400"),
+                                       ("tamanho_ass", "media"), ("posicao", "baixo"), ("maiusculas", False))},
                                    "estilos_salvos": aprendizado().get("estilos_legenda", []),
                                    "fontes": [list(o) for o in opcoes_fonte()]})
             if url.path == "/api/musicas":
@@ -1141,7 +1161,7 @@ class App(BaseHTTPRequestHandler):
             return self._json({"erro": "não encontrado"}, 404)
         except Exception as e:
             traceback.print_exc()
-            return self._json({"erro": str(e)}, 500)
+            return self._json({"erro": mensagem_amigavel(e)}, 500)
 
     def do_POST(self):
         url = urllib.parse.urlparse(self.path)
@@ -1194,6 +1214,8 @@ class App(BaseHTTPRequestHandler):
             if url.path == "/api/arquivo":
                 pid = q["id"]
                 nome = Path(urllib.parse.unquote(q["nome"])).name
+                if Path(nome).suffix.lower() not in EXT_PERMITIDAS:
+                    return self._json({"erro": "Esse tipo de arquivo não é aceito. Use vídeo, áudio ou imagem."}, 400)
                 self._receber(dir_projeto(pid) / "takes" / nome)
                 return self._json({"ok": True})
 
@@ -1500,7 +1522,7 @@ class App(BaseHTTPRequestHandler):
             return self._json({"erro": "login"}, 401)
         except Exception as e:
             traceback.print_exc()
-            return self._json({"erro": str(e)}, 500)
+            return self._json({"erro": mensagem_amigavel(e)}, 500)
 
 
 def main(abrir=True):
